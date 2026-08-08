@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "luaversion": "5.1",
+  "tiledversion": "1.10.0",
+  "orientation": "orthogonal",
+  "renderorder": "right-down",
+  "width": 128,
+  "height": 128,
+  "tilewidth": 32,
+  "tileheight": 32,
+  "infinite": false,
+  "nextlayerid": 4,
+  "nextobjectid": 1,
+  "tilesets": [
+    {
+      "firstgid": 1,
+      "name": "terrain",
+      "tilewidth": 32,
+      "tileheight": 32,
+      "tilecount": 32,
+      "columns": 8,
+      "image": "terrain.png"
+    }
+  ],
+  "layers": [
+    {
+      "id": 1,
+      "name": "ground",
+      "type": "tilelayer",
+      "width": 128,
+      "height": 128,
+      "visible": true,
+      "opacity": 1,
+      "data": []
+    },
+    {
+      "id": 2,
+      "name": "collision",
+      "type": "tilelayer",
+      "width": 128,
+      "height": 128,
+      "visible": false,
+      "opacity": 1,
+      "data": []
+    },
+    {
+      "id": 3,
+      "name": "decoration",
+      "type": "tilelayer",
+      "width": 128,
+      "height": 128,
+      "visible": true,
+      "opacity": 1,
+      "data": []
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: brawl-royale-server
+    runtime: node
+    plan: starter
+    branch: main
+    buildCommand: npm install
+    startCommand: node server/index.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: RENDER_REGION
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: CLIENT_ORIGIN
+        sync: false

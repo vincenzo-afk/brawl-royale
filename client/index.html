@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Brawl Royale — Multiplayer Battle Royale Shooter</title>
+  <meta name="description" content="A browser-based 2D battle royale multiplayer shooter. Drop in, loot up, be the last one standing." />
+  <meta name="theme-color" content="#0a0a1a" />
+  <meta property="og:title" content="Brawl Royale" />
+  <meta property="og:description" content="Real-time 2D multiplayer battle royale in your browser." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/styles/main.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Loading screen -->
+    <div id="loading-screen">
+      <div class="loader-content">
+        <div class="logo-text">BRAWL<span>ROYALE</span></div>
+        <div class="loader-bar-wrap"><div class="loader-bar" id="loader-bar"></div></div>
+        <div class="loader-status" id="loader-status">Initializing…</div>
+      </div>
+    </div>
+
+    <!-- Main menu overlay -->
+    <div id="main-menu" class="screen hidden">
+      <div class="menu-bg"></div>
+      <div class="menu-content">
+        <h1 class="game-title">BRAWL<span class="accent">ROYALE</span></h1>
+        <p class="game-subtitle">2D Multiplayer Battle Royale</p>
+        <div class="player-setup">
+          <input type="text" id="player-name" class="name-input" placeholder="Enter your name" maxlength="16" value="Brawler" />
+          <div class="skin-picker" id="skin-picker">
+            <!-- Skins rendered by JS -->
+          </div>
+        </div>
+        <div class="menu-buttons">
+          <button id="btn-solo" class="btn btn-primary" data-mode="SOLO">⚔ SOLO</button>
+          <button id="btn-duo" class="btn btn-secondary" data-mode="DUO">👥 DUO</button>
+          <button id="btn-squad" class="btn btn-secondary" data-mode="SQUAD">🛡 SQUAD</button>
+          <button id="btn-custom" class="btn btn-outline">🔒 CUSTOM LOBBY</button>
+          <button id="btn-leaderboard" class="btn btn-ghost">🏆 LEADERBOARD</button>
+        </div>
+        <div class="server-status" id="server-status">Connecting to server…</div>
+      </div>
+    </div>
+
+    <!-- Matchmaking screen -->
+    <div id="matchmaking-screen" class="screen hidden">
+      <div class="queue-box">
+        <div class="queue-title">FINDING MATCH</div>
+        <div class="queue-mode" id="queue-mode">SOLO</div>
+        <div class="queue-count" id="queue-count">1 / 64</div>
+        <div class="queue-spinner"></div>
+        <div class="queue-time" id="queue-time">Searching… 0s</div>
+        <button id="btn-cancel-queue" class="btn btn-danger">CANCEL</button>
+      </div>
+    </div>
+
+    <!-- Custom lobby screen -->
+    <div id="custom-lobby-screen" class="screen hidden">
+      <div class="lobby-box">
+        <div class="lobby-title">CUSTOM LOBBY</div>
+        <div class="lobby-code-section">
+          <label>JOIN CODE</label>
+          <div class="lobby-code" id="lobby-code">------</div>
+          <div class="lobby-join-row">
+            <input type="text" id="lobby-code-input" placeholder="Enter code" maxlength="6" />
+            <button id="btn-join-code" class="btn btn-primary">JOIN</button>
+          </div>
+          <button id="btn-create-lobby" class="btn btn-outline">CREATE LOBBY</button>
+        </div>
+        <button id="btn-back-main" class="btn btn-ghost">← BACK</button>
+      </div>
+    </div>
+
+    <!-- Countdown overlay -->
+    <div id="countdown-overlay" class="screen hidden">
+      <div class="countdown-text" id="countdown-number">5</div>
+      <div class="countdown-label">MATCH STARTING</div>
+    </div>
+
+    <!-- Game canvas layer -->
+    <div id="game-layer" class="hidden">
+      <canvas id="game-canvas"></canvas>
+
+      <!-- HUD overlay (HTML over canvas) -->
+      <div id="hud">
+        <!-- Top bar -->
+        <div id="hud-top">
+          <div id="player-count-hud">
+            <span class="icon">⚡</span>
+            <span id="hud-alive">--</span>
+            <span class="sep">/</span>
+            <span id="hud-total">--</span>
+          </div>
+          <div id="storm-timer-hud">
+            <span class="storm-label">STORM</span>
+            <span id="hud-storm-time">--:--</span>
+          </div>
+          <div id="ping-hud">
+            <span id="hud-ping">--- ms</span>
+          </div>
+        </div>
+
+        <!-- Minimap -->
+        <div id="minimap-container">
+          <canvas id="minimap-canvas" width="200" height="200"></canvas>
+          <div id="minimap-phase">P<span id="mm-phase">1</span></div>
+        </div>
+
+        <!-- Kill feed -->
+        <div id="kill-feed"></div>
+
+        <!-- Bottom HUD -->
+        <div id="hud-bottom">
+          <!-- Health & shield -->
+          <div id="health-section">
+            <div id="shield-bar-wrap">
+              <div id="shield-bar"></div>
+              <span id="shield-val">0</span>
+            </div>
+            <div id="health-bar-wrap">
+              <div id="health-bar"></div>
+              <span id="health-val">100</span>
+            </div>
+            <div id="armor-icons">
+              <span id="helmet-icon" title="Helmet">🪖</span>
+              <span id="vest-icon" title="Vest">🛡</span>
+            </div>
+          </div>
+
+          <!-- Inventory -->
+          <div id="inventory-hud">
+            <div class="inv-slot" id="inv-slot-0" data-slot="0">
+              <div class="slot-label">1</div>
+              <div class="slot-weapon" id="slot-weapon-0">—</div>
+              <div class="slot-ammo" id="slot-ammo-0"></div>
+            </div>
+            <div class="inv-slot" id="inv-slot-1" data-slot="1">
+              <div class="slot-label">2</div>
+              <div class="slot-weapon" id="slot-weapon-1">—</div>
+              <div class="slot-ammo" id="slot-ammo-1"></div>
+            </div>
+            <div class="inv-slot active" id="inv-slot-2" data-slot="2">
+              <div class="slot-label">3</div>
+              <div class="slot-weapon" id="slot-weapon-2">FISTS</div>
+              <div class="slot-ammo" id="slot-ammo-2">∞</div>
+            </div>
+          </div>
+
+          <!-- Active weapon ammo -->
+          <div id="ammo-display">
+            <span id="ammo-mag">∞</span>
+            <span class="ammo-sep">/</span>
+            <span id="ammo-reserve">∞</span>
+          </div>
+        </div>
+
+        <!-- Interaction prompt -->
+        <div id="interaction-prompt" class="hidden">
+          <span>[ E ] Pick up <span id="interact-item-name">item</span></span>
+        </div>
+
+        <!-- Crosshair -->
+        <div id="crosshair">
+          <div class="ch-top"></div>
+          <div class="ch-bottom"></div>
+          <div class="ch-left"></div>
+          <div class="ch-right"></div>
+        </div>
+
+        <!-- Hit marker -->
+        <div id="hit-marker" class="hidden"></div>
+
+        <!-- Reload indicator -->
+        <div id="reload-indicator" class="hidden">
+          <div class="reload-text">RELOADING</div>
+          <div class="reload-bar-wrap"><div class="reload-bar" id="reload-bar"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Death / spectator screen -->
+    <div id="death-screen" class="screen hidden">
+      <div class="death-content">
+        <div class="death-title">ELIMINATED</div>
+        <div class="death-stats" id="death-stats"></div>
+        <div class="spectate-controls">
+          <button id="btn-spectate-prev" class="btn btn-ghost">◀ PREV</button>
+          <span id="spectate-name">Spectating: —</span>
+          <button id="btn-spectate-next" class="btn btn-ghost">NEXT ▶</button>
+        </div>
+        <button id="btn-back-menu" class="btn btn-primary">MAIN MENU</button>
+      </div>
+    </div>
+
+    <!-- Match end screen -->
+    <div id="match-end-screen" class="screen hidden">
+      <div class="end-content">
+        <div class="end-title" id="end-title">VICTORY ROYALE</div>
+        <div class="end-winner" id="end-winner"></div>
+        <div class="end-stats" id="end-stats"></div>
+        <button id="btn-play-again" class="btn btn-primary">PLAY AGAIN</button>
+        <button id="btn-end-menu" class="btn btn-ghost">MAIN MENU</button>
+      </div>
+    </div>
+
+    <!-- Leaderboard overlay -->
+    <div id="leaderboard-overlay" class="screen hidden">
+      <div class="lb-box">
+        <div class="lb-title">🏆 LEADERBOARD</div>
+        <div class="lb-table-wrap">
+          <table class="lb-table" id="lb-table">
+            <thead>
+              <tr><th>#</th><th>Name</th><th>ELO</th><th>Wins</th><th>Kills</th></tr>
+            </thead>
+            <tbody id="lb-body"></tbody>
+          </table>
+        </div>
+        <button id="btn-lb-close" class="btn btn-ghost">CLOSE</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
