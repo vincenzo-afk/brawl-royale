@@ -63,6 +63,8 @@ export class Game {
     this._wasAds = false;
     this._lastLightning = 0;
     this._lightningFlash = 0;
+    this._lastStormGust = 0;
+    this._stormGustInterval = 0;
     this._victoryFrames = 0;
     this._preAdsZoom = null;
     this._fireflyAcc = 0;
@@ -622,9 +624,21 @@ export class Game {
           this._lastLightning = now;
           this._lightningFlash = 1;
           this.audio.playThunder();
+          this.renderer.stormStrike(now);
+        }
+        // Periodic wind gusts (interval picked once per reset)
+        if (now - this._lastStormGust > this._stormGustInterval || this._lastStormGust === 0) {
+          this._lastStormGust = now;
+          this._stormGustInterval = 6500 + Math.random() * 4000;
+          this.audio.playStormGust();
         }
       } else {
         this.audio.playStormLoop(false);
+        // Occasional visible bolt when watching the storm from outside
+        if (Math.random() < 0.002 && now - this._lastLightning > 5000) {
+          this._lastLightning = now;
+          this.renderer.stormStrike(now);
+        }
       }
     }
     this._lightningFlash = Math.max(0, (this._lightningFlash || 0) - dt * 2.2);
@@ -633,6 +647,22 @@ export class Game {
       ambient: dn.ambient,
       tint: dn.tint,
     });
+
+    // ── Storm rain overlay (screen space, masked to the storm) ─
+    if (this.storm && this.storm.currentRadius > 0) {
+      const sc = this.camera.worldToScreen(this.storm.centerX, this.storm.centerY);
+      let rainIntensity = 0.35;
+      if (this.localPlayer?.alive && this.state === GAME_STATE.PLAYING) {
+        const dist = Math.hypot(this.localPlayer.x - this.storm.centerX, this.localPlayer.y - this.storm.centerY);
+        rainIntensity = dist > this.storm.currentRadius ? 1 : 0.35;
+      } else if (this.state === GAME_STATE.DEAD || this.state === GAME_STATE.SPECTATING) {
+        rainIntensity = 0.8;
+      }
+      this.renderer.drawRainOverlay(
+        sc.x, sc.y, this.storm.currentRadius * this.camera.zoom,
+        dt, now, rainIntensity
+      );
+    }
 
     // Sun/moon clock indicator
     const label = `${dn.icon} ${dn.clockLabel}`;
@@ -659,7 +689,7 @@ export class Game {
 
     // Minimap (outside camera transform)
     const remotePlayers = [...this.players.values()].filter(p => p.id !== this.localPlayerId);
-    this.minimap.render(this.localPlayer, remotePlayers, this.storm, this.mapData);
+    this.minimap.render(this.localPlayer, remotePlayers, this.storm, this.mapData, [], now);
   }
 
   // Per-player walk animation state

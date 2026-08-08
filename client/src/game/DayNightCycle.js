@@ -5,18 +5,20 @@
 // 24h clock. A full cycle takes cycleDurationMs.
 // ============================================================
 
-// [sunHeight, {r,g,b,a}] keyframes — sunHeight: 1 = noon, 0 = horizon, -1 = midnight
+// [progress, {r,g,b,a}] keyframes keyed by CYCLE PROGRESS (0..1, monotonic
+// time) so evening and morning can have distinct looks. 0 = noon,
+// 0.25 ≈ sunset, 0.5 = midnight, 0.75 ≈ dawn.
 const TINT_KEYFRAMES = [
-  [1.0,  { r: 255, g: 246, b: 214, a: 0.05 }],  // noon — barely warm
-  [0.45, { r: 255, g: 216, b: 150, a: 0.14 }],  // afternoon
-  [0.12, { r: 255, g: 150, b: 82,  a: 0.28 }],  // golden hour
-  [0.0,  { r: 214, g: 122, b: 108, a: 0.30 }],  // sunset
-  [-0.35,{ r: 108, g: 96,  b: 168, a: 0.34 }],  // twilight
-  [-0.7, { r: 30,  g: 44,  b: 100, a: 0.40 }],  // night
-  [-1.0, { r: 22,  g: 32,  b: 76,  a: 0.46 }],  // midnight
-  [-0.2, { r: 96,  g: 74,  b: 130, a: 0.34 }],  // pre-dawn
-  [0.18, { r: 255, g: 176, b: 122, a: 0.24 }],  // dawn
-  [1.0,  { r: 255, g: 246, b: 214, a: 0.05 }],  // wrap
+  [0.00, { r: 255, g: 246, b: 214, a: 0.05 }],  // noon — barely warm
+  [0.18, { r: 255, g: 216, b: 150, a: 0.14 }],  // afternoon
+  [0.23, { r: 255, g: 150, b: 82,  a: 0.28 }],  // golden hour
+  [0.26, { r: 214, g: 122, b: 108, a: 0.28 }],  // sunset
+  [0.31, { r: 108, g: 96,  b: 168, a: 0.28 }],  // twilight
+  [0.39, { r: 30,  g: 44,  b: 100, a: 0.30 }],  // night
+  [0.50, { r: 22,  g: 32,  b: 76,  a: 0.34 }],  // midnight
+  [0.61, { r: 96,  g: 74,  b: 130, a: 0.28 }],  // pre-dawn
+  [0.73, { r: 255, g: 176, b: 122, a: 0.22 }],  // dawn
+  [1.00, { r: 255, g: 246, b: 214, a: 0.05 }],  // wrap → noon
 ];
 
 function smoothstep(edge0, edge1, x) {
@@ -26,24 +28,28 @@ function smoothstep(edge0, edge1, x) {
 
 function lerp(a, b, t) { return a + (b - a) * t; }
 
-function blendTint(sunHeight) {
+function blendTint(progress) {
+  // Progress is monotonic (0..1), so a simple ascending scan is exact:
+  // every keyframe is reachable and the curve is continuous by construction.
   let lo = TINT_KEYFRAMES[0];
   let hi = TINT_KEYFRAMES[TINT_KEYFRAMES.length - 1];
   for (let i = 0; i < TINT_KEYFRAMES.length - 1; i++) {
-    if (sunHeight >= TINT_KEYFRAMES[i][0] && sunHeight <= TINT_KEYFRAMES[i + 1][0]) {
+    const a = TINT_KEYFRAMES[i][0];
+    const b = TINT_KEYFRAMES[i + 1][0];
+    if (progress >= a && progress <= b) {
       lo = TINT_KEYFRAMES[i];
       hi = TINT_KEYFRAMES[i + 1];
       break;
     }
   }
-  const span = hi[0] - lo[0] || 1;
-  const t = Math.max(0, Math.min(1, (sunHeight - lo[0]) / span));
-  const a = lo[1], b = hi[1];
+  const a = lo[0], b = hi[0];
+  const t = b !== a ? (progress - a) / (b - a) : 0;
+  const ca = lo[1], cb = hi[1];
   return {
-    r: Math.round(lerp(a.r, b.r, t)),
-    g: Math.round(lerp(a.g, b.g, t)),
-    b: Math.round(lerp(a.b, b.b, t)),
-    a: lerp(a.a, b.a, t),
+    r: Math.round(lerp(ca.r, cb.r, t)),
+    g: Math.round(lerp(ca.g, cb.g, t)),
+    b: Math.round(lerp(ca.b, cb.b, t)),
+    a: lerp(ca.a, cb.a, t),
   };
 }
 
@@ -61,8 +67,10 @@ export class DayNightCycle {
     // Smooth day↔night blend around the horizon
     const nightFactor = 1 - smoothstep(-0.25, 0.25, sunHeight);
 
-    const ambient = 0.13 + nightFactor * 0.37;            // darkness amount
-    const tint = blendTint(sunHeight);
+    // Ambient darkness — capped so night stays playable (ambient + tint
+    // stack, ~0.62 effective darkness at midnight)
+    const ambient = 0.13 + nightFactor * 0.32;
+    const tint = blendTint(progress);
 
     // Fake 24h clock (noon = start of cycle)
     const hoursFloat = (12 + progress * 24) % 24;

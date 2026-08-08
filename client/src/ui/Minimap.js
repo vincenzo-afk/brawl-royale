@@ -11,7 +11,7 @@ export class Minimap {
     this.$phase = document.getElementById('mm-phase');
   }
 
-  render(localPlayer, remotePlayers, storm, mapData = null, lootItems = []) {
+  render(localPlayer, remotePlayers, storm, mapData = null, lootItems = [], now = Date.now()) {
     if (!this.ctx) return;
     const ctx = this.ctx;
     const s = this.size;
@@ -62,25 +62,39 @@ export class Minimap {
     }
 
     // Storm ring
-    if (storm) {
+    if (storm && (storm.currentRadius || 0) > 0) {
       const cx = storm.centerX * scaleX;
       const cy = storm.centerY * scaleY;
       const r = storm.currentRadius * scaleX;
 
-      // Dark outside
       ctx.save();
+      // Purple gradient outside (darker further from the ring)
+      const grd = ctx.createRadialGradient(cx, cy, r * 0.9, cx, cy, r * 1.35);
+      grd.addColorStop(0, 'rgba(50,0,100,0.05)');
+      grd.addColorStop(0.55, 'rgba(60,0,120,0.28)');
+      grd.addColorStop(1, 'rgba(90,0,170,0.55)');
       ctx.beginPath();
       ctx.rect(0, 0, s, s);
       ctx.arc(cx, cy, r, 0, Math.PI * 2, true);
-      ctx.fillStyle = 'rgba(50,0,100,0.4)';
+      ctx.fillStyle = grd;
       ctx.fill('evenodd');
 
-      // Ring
+      // Soft glow band
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(140,0,255,0.9)';
+      ctx.strokeStyle = 'rgba(123,0,255,0.35)';
+      ctx.lineWidth = 3.5;
+      ctx.stroke();
+
+      // Rotating dashed ring (marching ants)
+      ctx.beginPath();
+      ctx.setLineDash([5, 4]);
+      ctx.lineDashOffset = -((now / 30) % 9);
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(165,90,255,0.95)';
       ctx.lineWidth = 1.5;
       ctx.stroke();
+      ctx.setLineDash([]);
 
       // Target ring
       if (storm.targetRadius && storm.targetRadius !== storm.currentRadius) {

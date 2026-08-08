@@ -538,42 +538,144 @@ export class Renderer {
   }
 
   // ── Storm circle ──────────────────────────────────────────
+  // Full storm treatment: rotating cloud bands, rain curtain,
+  // wind streaks, jagged electric arcs + synced lightning bolts,
+  // and a dual-layer energy ring.
   drawStorm(storm, now = 0) {
     const ctx = this.ctx;
     const { centerX, centerY, currentRadius, targetCenterX, targetCenterY, targetRadius } = storm;
+    if (!currentRadius || currentRadius <= 0) return;
+    const t = now / 1000;
 
     ctx.save();
-    // Outside-storm overlay
+    ctx.lineCap = 'round';
+
+    // Segment counts scale with radius so the ring/bands stay
+    // smooth even when the storm is huge at match start
+    const segs = Math.max(24, Math.min(90, Math.round(currentRadius / 35)));
+
+    // ── Outside-storm overlay ────────────────────────────────
     ctx.beginPath();
-    ctx.rect(0, 0, MAP_WIDTH, MAP_HEIGHT);
+    ctx.rect(-40, -40, MAP_WIDTH + 80, MAP_HEIGHT + 80);
     ctx.arc(centerX, centerY, currentRadius, 0, Math.PI * 2, true);
-    ctx.fillStyle = 'rgba(22,0,66,0.42)';
+    ctx.fillStyle = 'rgba(20,0,58,0.46)';
     ctx.fill('evenodd');
 
-    // Animated storm ring
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, currentRadius, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(123,0,255,0.9)';
-    ctx.lineWidth = 4;
-    ctx.shadowColor = '#7b00ff';
-    ctx.shadowBlur = 22;
-    ctx.stroke();
-
-    // Electric arcs flickering along the ring
-    if (now > 0 && currentRadius > 0) {
-      const segs = 14;
+    // ── Rotating cloud bands circling the eye ────────────────
+    const bandSpan = 3.2; // arc coverage per band (~183°)
+    for (let arm = 0; arm < 3; arm++) {
+      const base = (arm / 3) * Math.PI * 2 + t * 0.14 * (arm % 2 === 0 ? 1 : -1);
       ctx.beginPath();
       for (let i = 0; i <= segs; i++) {
-        const a = (i / segs) * Math.PI * 2 + Math.sin(now / 400 + i) * 0.02;
-        const rr = currentRadius + Math.sin(now / 180 + i * 3.7) * 3;
+        const a = base + (i / segs) * bandSpan;
+        const rr = currentRadius + 34 + Math.sin((i / segs) * bandSpan * 1.7 + arm * 2.1) * 46;
         const px = centerX + Math.cos(a) * rr;
         const py = centerY + Math.sin(a) * rr;
         if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
       }
-      ctx.strokeStyle = 'rgba(160,60,255,0.5)';
-      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = 'rgba(58,14,110,0.20)';
+      ctx.lineWidth = 26;
       ctx.stroke();
     }
+
+    // ── Drifting cloud puffs ─────────────────────────────────
+    const puffs = 10;
+    for (let i = 0; i < puffs; i++) {
+      const a = (i / puffs) * Math.PI * 2 + t * 0.05;
+      const rr = currentRadius + 90 + Math.sin(t * 0.3 + i * 1.7) * 30;
+      ctx.fillStyle = 'rgba(40,8,90,0.10)';
+      ctx.beginPath();
+      ctx.arc(
+        centerX + Math.cos(a) * rr,
+        centerY + Math.sin(a) * rr,
+        26 + Math.sin(t + i * 2) * 6, 0, Math.PI * 2
+      );
+      ctx.fill();
+    }
+
+    // ── Rain curtain band just inside the edge ───────────────
+    const band = ctx.createRadialGradient(centerX, centerY, currentRadius - 70, centerX, centerY, currentRadius);
+    band.addColorStop(0, 'rgba(70,90,140,0)');
+    band.addColorStop(1, 'rgba(70,90,140,0.28)');
+    ctx.fillStyle = band;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, currentRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // ── Wind streaks circling just outside the ring ──────────
+    const streaks = Math.max(18, Math.round(segs * 0.6));
+    for (let i = 0; i < streaks; i++) {
+      const a = (i / streaks) * Math.PI * 2 + t * 0.55;
+      const rr = currentRadius + 10;
+      const px = centerX + Math.cos(a) * rr;
+      const py = centerY + Math.sin(a) * rr;
+      const ta = a + Math.PI / 2; // tangent direction
+      ctx.strokeStyle = `rgba(168,160,255,${0.10 + (i % 3) * 0.05})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(px + Math.cos(ta) * 16, py + Math.sin(ta) * 16);
+      ctx.stroke();
+    }
+
+    // ── Jagged electric arcs (constant faint crackle) ────────
+    ctx.beginPath();
+    for (let i = 0; i <= segs; i++) {
+      const a = (i / segs) * Math.PI * 2;
+      const jig = Math.sin(now / 150 + i * 5.1) * 4 + Math.sin(now / 400 + i * 2.3) * 3;
+      const rr = currentRadius + jig;
+      const px = centerX + Math.cos(a) * rr;
+      const py = centerY + Math.sin(a) * rr;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.strokeStyle = 'rgba(150,80,255,0.35)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // ── Lightning bolts (synced with thunder via stormStrike) ─
+    const strikeAge = now - (this._stormStrikeAt ?? -1e9);
+    if (strikeAge >= 0 && strikeAge < 420) {
+      const fade = 1 - strikeAge / 420;
+      const seed = this._stormStrikeSeed || 0;
+      const bolts = 3 + (seed % 3);
+      for (let b = 0; b < bolts; b++) {
+        const baseA = seed * 1.31 + b * ((Math.PI * 2) / bolts) + 0.7;
+        ctx.beginPath();
+        let px = centerX + Math.cos(baseA) * currentRadius;
+        let py = centerY + Math.sin(baseA) * currentRadius;
+        ctx.moveTo(px, py);
+        for (let s2 = 0; s2 < 5; s2++) {
+          const a = baseA + Math.sin(seed + s2 * 2.7) * 0.5;
+          const len = 22 + (seed % 7) * 3;
+          px += Math.cos(a) * len;
+          py += Math.sin(a) * len;
+          ctx.lineTo(px, py);
+        }
+        ctx.shadowColor = '#a66bff';
+        ctx.shadowBlur = 14;
+        ctx.strokeStyle = `rgba(200,190,255,${0.75 * fade})`;
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+        ctx.strokeStyle = `rgba(255,255,255,${0.9 * fade})`;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+    }
+
+    // ── Dual-layer energy ring ───────────────────────────────
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, currentRadius, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(110,40,230,0.28)';
+    ctx.lineWidth = 12;
+    ctx.shadowColor = '#7b00ff';
+    ctx.shadowBlur = 30;
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(168,90,255,0.95)';
+    ctx.lineWidth = 3;
+    ctx.shadowBlur = 18;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
 
     // Target ring (dashed)
     if (targetRadius > 0 && targetRadius !== currentRadius) {
@@ -588,6 +690,95 @@ export class Renderer {
     }
 
     ctx.restore();
+  }
+
+  // Trigger a visible lightning strike along the storm ring.
+  // Call right when thunder plays so bolts + flash + sound line up.
+  stormStrike(now = Date.now()) {
+    this._stormStrikeAt = now;
+    this._stormStrikeSeed = Math.floor(Math.random() * 1000);
+  }
+
+  // ── Storm rain overlay (screen space, masked to the storm) ─
+  // cx, cy, radius in SCREEN coords. Only the area outside the
+  // storm circle gets rain, with a heavy curtain right at the
+  // edge that thins out deeper in the storm.
+  drawRainOverlay(cx, cy, radius, dt = 0.016, now = 0, intensity = 1) {
+    if (!radius || radius <= 0 || intensity <= 0) return;
+    const ctx = this.ctx;
+    const w = this.width, h = this.height;
+
+    if (!this._rainDrops) {
+      this._rainDrops = [];
+      for (let i = 0; i < 130; i++) this._rainDrops.push(this._newRainDrop(w, h));
+      this._rainSplashes = [];
+      this._rainSplashAcc = 0;
+    }
+
+    const wind = Math.sin(now / 4000) * 0.18 + 0.30; // horizontal drift per vertical px
+    const speed = 640;
+
+    ctx.save();
+    // Mask: everything OUTSIDE the storm circle
+    ctx.beginPath();
+    ctx.rect(0, 0, w, h);
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2, true);
+    ctx.clip('evenodd');
+
+    ctx.lineCap = 'round';
+    const drops = this._rainDrops;
+    for (let i = 0; i < drops.length; i++) {
+      const d = drops[i];
+      d.x += wind * speed * dt;
+      d.y += speed * dt;
+      if (d.x > w + 40) d.x = -40 - Math.random() * 60;
+      if (d.y > h + 40) {
+        d.y = -40 - Math.random() * 60;
+        d.x = Math.random() * (w + 80) - 40;
+      }
+
+      // Heavy curtain right at the ring, thinning out deeper inside
+      const dx = d.x - cx, dy = d.y - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const edgeFade = Math.min(1, Math.max(0, (dist - radius) / 90));
+
+      ctx.globalAlpha = intensity * (0.18 + 0.30 * (1 - edgeFade));
+      ctx.strokeStyle = '#9fb4e8';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(d.x, d.y);
+      ctx.lineTo(d.x - wind * d.len, d.y - d.len);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    // Splash ripples
+    this._rainSplashAcc += intensity * dt;
+    while (this._rainSplashAcc >= 0.09 && this._rainSplashes.length < 24) {
+      this._rainSplashAcc -= 0.09;
+      this._rainSplashes.push({ x: Math.random() * w, y: Math.random() * h, born: now, dur: 420 });
+    }
+    if (this._rainSplashes.length >= 24) this._rainSplashAcc = 0;
+    this._rainSplashes = this._rainSplashes.filter((s) => now - s.born < s.dur);
+    ctx.strokeStyle = 'rgba(190,205,255,0.8)';
+    ctx.lineWidth = 1;
+    for (const s of this._rainSplashes) {
+      const p = (now - s.born) / s.dur;
+      ctx.globalAlpha = 0.35 * (1 - p);
+      ctx.beginPath();
+      ctx.ellipse(s.x, s.y, 3 + p * 7, 1.5 + p * 3, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  _newRainDrop(w, h) {
+    return {
+      x: Math.random() * (w + 80) - 40,
+      y: Math.random() * (h + 80) - 40,
+      len: 8 + Math.random() * 10,
+    };
   }
 
   // ── Lighting pass (screen space) ──────────────────────────

@@ -374,12 +374,26 @@ html, body {
 }
 @keyframes healPulse { 0%,100% { opacity: 0.3; } 50% { opacity: 0.65; } }
 
-/* Outside the storm — purple danger edges */
+/* Outside the storm — purple danger edges + driving rain streaks */
 #vignette-layer.storm::before {
-  background: radial-gradient(ellipse at center, transparent 44%, rgba(123,0,255,0.5) 100%);
-  animation: stormPulse 2s ease-in-out infinite;
+  background: radial-gradient(ellipse at center, transparent 38%, rgba(70,0,160,0.3) 62%, rgba(123,0,255,0.62) 100%);
+  animation: stormPulse 2.2s ease-in-out infinite;
 }
-@keyframes stormPulse { 0%,100% { opacity: 0.35; } 50% { opacity: 0.6; } }
+@keyframes stormPulse { 0%,100% { opacity: 0.4; } 50% { opacity: 0.8; } }
+#vignette-layer.storm::after {
+  opacity: 1;
+  background: repeating-linear-gradient(
+    112deg,
+    transparent 0 5px,
+    rgba(150,170,255,0.06) 5px 8px,
+    transparent 8px 14px
+  );
+  animation: stormRainScroll 0.45s linear infinite;
+}
+@keyframes stormRainScroll {
+  from { background-position: 0 0; }
+  to   { background-position: -34px 14px; }
+}
 
 /* Aiming down sights — scope vignette */
 #vignette-layer.ads::after {

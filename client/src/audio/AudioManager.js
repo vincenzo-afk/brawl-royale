@@ -126,6 +126,7 @@ export class AudioManager {
   playDeath() { this.play('sfx_death'); }
   playVictory() { this.play('sfx_victory'); }
   playThunder() { this.play('sfx_thunder'); }
+  playStormGust() { this.play('sfx_storm_gust'); }
   playAirdrop() { this.play('sfx_airdrop'); }
   playUI() { this.play('sfx_ui'); }
   playDryFire() { this.play('sfx_dryfire'); }
@@ -260,6 +261,10 @@ export class AudioManager {
     sfx_thunder() {
       this._noise({ from: 320, to: 45, decay: 2.2, vol: 1.1 });
       this._noise({ delay: 0.35, from: 220, to: 40, decay: 1.6, vol: 0.8 });
+    },
+    sfx_storm_gust() {
+      this._noise({ filterType: 'bandpass', from: 220, to: 900, q: 0.6, decay: 1.4, vol: 0.5 });
+      this._noise({ delay: 0.3, filterType: 'bandpass', from: 400, to: 1500, q: 0.8, decay: 1.1, vol: 0.3 });
     },
     sfx_airdrop() {
       this._noise({ from: 1800, to: 500, decay: 0.5, vol: 0.7 });
