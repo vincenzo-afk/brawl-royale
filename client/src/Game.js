@@ -351,7 +351,9 @@ export class Game {
   _requestPointerLock() {
     if (this.state !== GAME_STATE.PLAYING) return;
     if (document.pointerLockElement !== this.canvas) {
-      this.canvas.requestPointerLock?.();
+      // Chrome returns a promise that rejects if the call lacks a user gesture
+      const p = this.canvas.requestPointerLock?.();
+      if (p && typeof p.catch === 'function') p.catch(() => {});
     }
   }
 
