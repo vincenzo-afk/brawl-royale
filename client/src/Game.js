@@ -155,6 +155,10 @@ export class Game {
             delta,
             (player, input) => this.prediction.applyInput(player, input)
           );
+          // Sync coordinates directly as fallback if reconciliation isn't correcting desync
+          if (delta.x !== undefined) this.localPlayer.x = delta.x;
+          if (delta.y !== undefined) this.localPlayer.y = delta.y;
+          if (delta.angle !== undefined) this.localPlayer.angle = delta.angle;
           // Update health/shield from server
           if (delta.health !== undefined) this.localPlayer.health = delta.health;
           if (delta.shield !== undefined) this.localPlayer.shield = delta.shield;

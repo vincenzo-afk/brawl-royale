@@ -137,11 +137,12 @@ async function boot() {
     lobby.showLobbyCode(code);
   });
 
-  network.on(S2C.MATCH_START, () => {
+  network.on(S2C.MATCH_START, (data) => {
     hideScreen('matchmaking-screen');
     hideScreen('countdown-overlay');
     hideScreen('custom-lobby-screen');
     document.getElementById('game-layer').classList.remove('hidden');
+    game._onMatchStart(data);
   });
 
   network.on(S2C.MATCH_END, () => {
