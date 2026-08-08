@@ -81,6 +81,7 @@ export class InputHandler {
     if (this.keys.has('ControlLeft') || this.keys.has('KeyC'))    flags |= INPUT_FLAGS.CROUCH;
     if (this.keys.has('KeyE'))                                 flags |= INPUT_FLAGS.USE;
     if (this.keys.has('KeyH'))                                 flags |= INPUT_FLAGS.HEAL;
+    if (this.rightMouseDown)                                   flags |= INPUT_FLAGS.ADS;
     return flags;
   }
 

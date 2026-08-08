@@ -34,18 +34,23 @@ export class CombatSystem {
     player.lastFireTime = now;
     weapon.ammoInMag--;
 
+    // ADS (aim down sights) tightens the spread for accuracy
+    const ads = !!(input.flags & INPUT_FLAGS.ADS);
+    const spreadMult = ads ? 0.45 : 1;
+    const spread = def.spread * spreadMult;
+
     // Apply server-authoritative recoil
     const recoilStep = player.recoilIndex % def.recoilPattern.length;
     const recoil = def.recoilPattern[recoilStep] || 0;
     player.recoilIndex++;
-    const shotAngle = player.angle + (Math.random() * def.spread * 2 - def.spread) + recoil;
+    const shotAngle = player.angle + (Math.random() * spread * 2 - spread) + recoil;
 
     const events = [];
 
     if (def.type === WEAPON_TYPES.HITSCAN) {
       // Multi-pellet for shotguns
       for (let p = 0; p < def.pellets; p++) {
-        const pelletSpread = p === 0 ? 0 : (Math.random() * def.spread * 2 - def.spread);
+        const pelletSpread = p === 0 ? 0 : (Math.random() * spread * 2 - spread);
         const pelletAngle = shotAngle + pelletSpread;
 
         const result = PhysicsSystem.raycast(
@@ -224,6 +229,15 @@ export class CombatSystem {
       }
     }
     return events;
+  }
+
+  // Public reload trigger (R key / auto on empty mag)
+  tryReload(player) {
+    const weapon = player.activeWeapon;
+    if (!weapon || player.isReloading) return false;
+    const def = WEAPONS[weapon.weaponId];
+    if (!def) return false;
+    return this.startReload(player, weapon, def);
   }
 
   // Reload

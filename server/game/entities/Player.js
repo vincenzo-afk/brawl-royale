@@ -5,7 +5,8 @@ import { v4 as uuidv4 } from 'uuid';
 import {
   PLAYER_MAX_HEALTH, PLAYER_MAX_SHIELD, PLAYER_RADIUS,
   PLAYER_BASE_SPEED, PLAYER_SPRINT_MULTIPLIER, PLAYER_CROUCH_MULTIPLIER,
-  INVENTORY_SLOTS, INPUT_FLAGS,
+  PLAYER_AIM_WALK_SPEED, PLAYER_SWIM_SPEED,
+  INVENTORY_SLOTS, INPUT_FLAGS, HEALING_ITEMS,
 } from 'battle-royale-shared';
 
 export class Player {
@@ -63,9 +64,12 @@ export class Player {
     this.lastFireTime = 0;
     this.recoilIndex = 0;
     this.isReloading = false;
+
+    // Healing state
     this.isHealing = false;
     this.healEndTime = 0;
     this.healingItem = null;
+    this.lastDamageTime = 0;
 
     // Networking
     this.lastInputSeq = 0;
@@ -90,6 +94,14 @@ export class Player {
   // ── Damage ────────────────────────────────────────────────
   takeDamage(amount, { isHeadshot = false, isStorm = false } = {}) {
     if (!this.isAlive) return 0;
+
+    // Taking damage interrupts healing
+    if (this.isHealing) {
+      this.isHealing = false;
+      this.healingItem = null;
+      this._dirty.add('isHealing');
+    }
+    this.lastDamageTime = Date.now();
 
     let dmg = amount;
 
@@ -128,7 +140,8 @@ export class Player {
   }
 
   // ── Movement ──────────────────────────────────────────────
-  applyInput(input, dt) {
+  // world is optional — used for terrain speed modifiers (water)
+  applyInput(input, dt, world = null) {
     const flags = input.flags || 0;
     const up     = !!(flags & INPUT_FLAGS.UP);
     const down   = !!(flags & INPUT_FLAGS.DOWN);
@@ -136,13 +149,17 @@ export class Player {
     const right  = !!(flags & INPUT_FLAGS.RIGHT);
     const sprint = !!(flags & INPUT_FLAGS.SPRINT);
     const crouch = !!(flags & INPUT_FLAGS.CROUCH);
+    const ads    = !!(flags & INPUT_FLAGS.ADS);
 
-    this.isSprinting = sprint && !crouch;
+    this.isSprinting = sprint && !crouch && !ads;
     this.isCrouching = crouch;
+    this.isADS = ads;
 
     let spd = PLAYER_BASE_SPEED;
     if (this.isSprinting) spd *= PLAYER_SPRINT_MULTIPLIER;
     if (this.isCrouching) spd *= PLAYER_CROUCH_MULTIPLIER;
+    if (this.isADS) spd = Math.min(spd, PLAYER_AIM_WALK_SPEED);
+    if (world?.isWaterAt?.(this.x, this.y)) spd = Math.min(spd, PLAYER_SWIM_SPEED);
 
     let dx = 0, dy = 0;
     if (up)    dy -= 1;
@@ -157,13 +174,63 @@ export class Player {
     }
 
     const prevX = this.x, prevY = this.y;
+    const prevAngle = this.angle;
     this.x += dx * spd * dt;
     this.y += dy * spd * dt;
     this.angle = input.angle ?? this.angle;
 
     if (this.x !== prevX) this._dirty.add('x');
     if (this.y !== prevY) this._dirty.add('y');
-    if (this.angle !== input.angle) this._dirty.add('angle');
+    if (this.angle !== prevAngle) this._dirty.add('angle');
+  }
+
+  // ── Weapon switching ─────────────────────────────────────
+  switchWeaponSlot(slot) {
+    if (slot === this.activeSlot) return;
+    if (!this.inventory[slot]) return;
+    if (this.isHealing) { this.isHealing = false; this.healingItem = null; }
+    this.activeSlot = slot;
+    this.markDirty('activeSlot');
+  }
+
+  // ── Healing ──────────────────────────────────────────────
+  startHealing(slot) {
+    if (this.isHealing) return false;
+    const item = this.inventory[slot];
+    if (!item || !item.itemId) return false;
+    const def = HEALING_ITEMS[item.itemId];
+    if (!def) return false;
+
+    if (def.healAmount && this.health >= Math.min(def.maxHealth ?? this.maxHealth, this.maxHealth)) return false;
+    if (def.shieldAmount && this.shield >= Math.min(def.maxShield ?? this.maxShield, this.maxShield)) return false;
+    if (!def.healAmount && !def.shieldAmount) return false;
+
+    this.isHealing = true;
+    this.healEndTime = Date.now() + def.healTime;
+    this.healingItem = { slot, itemId: item.itemId };
+    this.markDirty('isHealing');
+    return true;
+  }
+
+  updateHealing(now = Date.now()) {
+    if (!this.isHealing || !this.healingItem) return false;
+    if (now < this.healEndTime) return false;
+
+    const { slot, itemId } = this.healingItem;
+    const def = HEALING_ITEMS[itemId];
+    const item = this.inventory[slot];
+
+    if (def && item) {
+      if (def.healAmount) this.heal(def.healAmount);
+      if (def.shieldAmount) this.replenishShield(def.shieldAmount);
+      item.quantity = Math.max(0, (item.quantity || 1) - 1);
+      if (item.quantity <= 0) this.inventory[slot] = null;
+    }
+
+    this.isHealing = false;
+    this.healingItem = null;
+    this.markDirty('inventory', 'isHealing');
+    return true;
   }
 
   // ── Inventory ─────────────────────────────────────────────
@@ -206,6 +273,8 @@ export class Player {
       activeWeaponId: this.activeWeapon?.weaponId || null,
       ammoInMag: this.activeWeapon?.ammoInMag ?? 0,
       reserveAmmo: this.activeWeapon?.reserveAmmo ?? 0,
+      isReloading: this.isReloading,
+      isHealing: this.isHealing,
       teamId: this.teamId,
       lastProcessedInput: this.lastProcessedInput,
     };

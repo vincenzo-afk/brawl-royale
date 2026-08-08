@@ -75,4 +75,5 @@ export const INPUT_FLAGS = {
   CROUCH:  1 << 7,   // Ctrl / C
   USE:     1 << 8,   // E — interact / pickup
   HEAL:    1 << 9,   // H
+  ADS:     1 << 10,  // Right mouse — aim down sights (slower + more accurate)
 };

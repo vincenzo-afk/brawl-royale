@@ -2,7 +2,10 @@
 // ROOM — single match instance
 // ============================================================
 import { v4 as uuidv4 } from 'uuid';
-import { S2C, GAME_MODES, SERVER_TICK_MS, INPUT_FLAGS, KILL_FEED_MAX, KILL_FEED_DURATION_MS } from 'battle-royale-shared';
+import {
+  S2C, GAME_MODES, SERVER_TICK_MS, INPUT_FLAGS, KILL_FEED_MAX, KILL_FEED_DURATION_MS,
+  PLAYER_SHIELD_REGEN_DELAY, PLAYER_SHIELD_REGEN_RATE, HEAL_SLOTS,
+} from 'battle-royale-shared';
 import { Player } from './entities/Player.js';
 import { World } from './World.js';
 import { StormSystem } from './systems/StormSystem.js';
@@ -34,7 +37,8 @@ export class Room {
     this.projectiles = new Map();
 
     // Systems
-    this.world = new World();
+    this.mapSeed = Math.floor(Math.random() * 99999);
+    this.world = new World(null, this.mapSeed);
     this.storm = new StormSystem();
     this.loot = new LootSystem(this.world);
     this.combat = new CombatSystem(this);
@@ -80,6 +84,7 @@ export class Room {
     socket.emit(S2C.GAME_STATE, {
       type: 'full',
       tick: this.tick,
+      map: this.world.toMapData(),
       players: [...this.players.values()].map(p => p.toSnapshot()),
       loot: this.loot.getAllLootSnapshots(),
       storm: this.storm.toSnapshot(),
@@ -173,8 +178,9 @@ export class Room {
 
     // Send match start
     this.emit(S2C.MATCH_START, {
-      mapSeed: 42,
+      mapSeed: this.mapSeed,
       gameMode: this.mode,
+      map: this.world.toMapData(),
       players: [...this.players.values()].map(p => p.toSnapshot()),
       storm: this.storm.toSnapshot(),
       loot: this.loot.getAllLootSnapshots(),
@@ -194,23 +200,68 @@ export class Room {
       bot.update(now, dt);
     }
 
-    // 2. Process inputs + physics
-    this.physics.update(this.players, dt);
-
-    // 2. Process fire inputs
+    // 2. Capture each player's latest input BEFORE physics drains
+    //    the buffer (physics.update() consumes it). Actions are
+    //    evaluated on the freshest input received since the last
+    //    tick. Flags are OR-aggregated across the whole buffer so
+    //    quick taps (R / H / E / weapon keys) are never dropped
+    //    between the 50ms ticks.
+    const lastInputs = new Map();
     for (const [socketId, playerId] of this.sockets) {
       const player = this.players.get(playerId);
       if (!player?.isAlive) continue;
+      const buf = player.inputBuffer;
+      if (buf.length === 0) continue;
 
-      // Check last input for fire flag
-      const lastInput = player.inputBuffer[player.inputBuffer.length - 1];
-      if (lastInput && (lastInput.flags & INPUT_FLAGS.FIRE)) {
-        const events = this.combat.processFireInput(player, lastInput, this.players, this.projectiles);
+      let actionFlags = 0;
+      let switchSlot = -1;
+      for (const input of buf) {
+        actionFlags |= input.flags || 0;
+        if (typeof input.switchSlot === 'number' && input.switchSlot >= 0) {
+          switchSlot = input.switchSlot;
+        }
+      }
+      lastInputs.set(playerId, {
+        flags: actionFlags,
+        angle: buf[buf.length - 1].angle ?? 0,
+      });
+      if (switchSlot >= 0) lastInputs.get(playerId).switchSlot = switchSlot;
+    }
+
+    // 3. Process inputs + physics (drains input buffers)
+    this.physics.update(this.players, dt);
+
+    // 4. Process player actions from captured inputs
+    for (const [playerId, input] of lastInputs) {
+      const player = this.players.get(playerId);
+      if (!player?.isAlive) continue;
+      const flags = input.flags || 0;
+
+      // Weapon switch (keys 1 / 2 / 3)
+      if (typeof input.switchSlot === 'number' && input.switchSlot >= 0 && input.switchSlot <= 5) {
+        player.switchWeaponSlot(input.switchSlot);
+      }
+
+      // Reload (R)
+      if (flags & INPUT_FLAGS.RELOAD) {
+        this.combat.tryReload(player);
+      }
+
+      // Heal (H) — use first usable healing item
+      if (flags & INPUT_FLAGS.HEAL) {
+        for (const slot of HEAL_SLOTS) {
+          if (player.startHealing(slot)) break;
+        }
+      }
+
+      // Fire (LMB)
+      if (flags & INPUT_FLAGS.FIRE) {
+        const events = this.combat.processFireInput(player, input, this.players, this.projectiles);
         if (events) this.processCombatEvents(events, player);
       }
 
-      // Check USE flag for pickup
-      if (lastInput && (lastInput.flags & INPUT_FLAGS.USE)) {
+      // Use / pickup (E)
+      if (flags & INPUT_FLAGS.USE) {
         const pickups = this.loot.checkPickups(this.players);
         for (const pickup of pickups) {
           this.emit(S2C.LOOT_PICKUP, pickup);
@@ -218,21 +269,21 @@ export class Room {
       }
     }
 
-    // 3. Update projectiles
+    // 5. Update projectiles
     this.physics.updateProjectiles(this.projectiles, dt);
 
-    // 4. Check projectile collisions
+    // 6. Check projectile collisions
     const projEvents = this.combat.checkProjectileCollisions(this.projectiles, this.players);
     for (const evt of projEvents) {
       this.processCombatEvent(evt);
     }
 
-    // 5. Clean dead projectiles
+    // 7. Clean dead projectiles
     for (const [id, proj] of this.projectiles) {
       if (!proj.alive) this.projectiles.delete(id);
     }
 
-    // 6. Storm update (every 5 ticks = 250ms)
+    // 8. Storm update (every 5 ticks = 250ms)
     if (this.tick % 5 === 0) {
       this.storm.update(now);
       const stormDamaged = this.storm.applyDamage(this.players, now);
@@ -243,10 +294,21 @@ export class Room {
       this.emit(S2C.STORM_UPDATE, this.storm.toSnapshot(now));
     }
 
-    // 7. Combat reloads
+    // 9. Complete reloads + healing
     this.combat.updateReloads(this.players);
+    for (const player of this.players.values()) {
+      if (player.isAlive) player.updateHealing(now);
+    }
 
-    // 8. Airdrops (check per tick)
+    // 10. Shield regen after a quiet period
+    for (const player of this.players.values()) {
+      if (!player.isAlive) continue;
+      if (now - player.lastDamageTime >= PLAYER_SHIELD_REGEN_DELAY && player.shield < player.maxShield) {
+        player.replenishShield(PLAYER_SHIELD_REGEN_RATE * dt);
+      }
+    }
+
+    // 11. Airdrops (check per tick)
     const airdrop = this.loot.updateAirdrop(now, this.players);
     if (airdrop) {
       this.emit(S2C.AIRDROP_INCOMING, { x: airdrop.x, y: airdrop.y, eta: airdrop.eta });
@@ -255,15 +317,15 @@ export class Room {
       }, airdrop.eta);
     }
 
-    // 9. Send delta state snapshot
+    // 12. Send delta state snapshot
     this.sendDeltaState(now);
 
-    // 10. Player count
+    // 13. Player count
     if (this.tick % 10 === 0) {
       this.emit(S2C.PLAYER_COUNT, { alive: this.aliveCount(), total: this.players.size });
     }
 
-    // 11. Check match end
+    // 14. Check match end
     this.checkMatchEnd();
   }
 

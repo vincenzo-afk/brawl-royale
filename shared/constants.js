@@ -20,9 +20,13 @@ export const PLAYER_RADIUS = 16;
 export const PLAYER_BASE_SPEED = 160;         // px/s
 export const PLAYER_SPRINT_MULTIPLIER = 1.5;
 export const PLAYER_CROUCH_MULTIPLIER = 0.5;
+export const PLAYER_AIM_WALK_SPEED = 100;     // px/s while ADS (right-click)
+export const PLAYER_SWIM_SPEED = 80;          // px/s in water
 export const PLAYER_MAX_HEALTH = 100;
 export const PLAYER_MAX_SHIELD = 100;
 export const PLAYER_SHIELD_REGEN_DELAY = 5000; // ms after last damage
+export const PLAYER_SHIELD_REGEN_RATE = 4;    // shield points per second
+export const PLAYER_PLAYER_COLLISION = true;   // players push each other
 
 // Armor tiers
 export const ARMOR_TIERS = {
@@ -104,6 +108,9 @@ export const STATE_SNAPSHOT_HISTORY = 10; // server snapshots to keep for reconc
 // Physics
 export const WORLD_GRAVITY = 0;        // top-down, no gravity
 export const MAX_VELOCITY = 400;       // px/s cap
+
+// Healing
+export const HEAL_SLOTS = [3, 4, 5];
 
 // Airdrops
 export const AIRDROP_INTERVAL_MS = 120000; // every 2 min

@@ -335,11 +335,64 @@ html, body {
 #game-layer { position: absolute; inset: 0; }
 #game-canvas { display: block; width: 100%; height: 100%; }
 
+/* ── Screen-space vignettes ────────────────────────────────── */
+#vignette-layer {
+  position: absolute; inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+#vignette-layer::before, #vignette-layer::after {
+  content: '';
+  position: absolute; inset: 0;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+/* Damage taken — quick red flash */
+#vignette-layer.flash::before {
+  opacity: 1;
+  background: radial-gradient(ellipse at center, transparent 38%, rgba(230,57,70,0.55) 100%);
+  animation: vignFlash 0.4s ease-out forwards;
+}
+@keyframes vignFlash {
+  0% { opacity: 0; }
+  18% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* Low health — pulsing red edges */
+#vignette-layer.lowhp::before {
+  background: radial-gradient(ellipse at center, transparent 44%, rgba(230,57,70,0.55) 100%);
+  animation: lowhpPulse 1.2s ease-in-out infinite;
+}
+@keyframes lowhpPulse { 0%,100% { opacity: 0.55; } 50% { opacity: 0.95; } }
+
+/* Healing — soft green pulse */
+#vignette-layer.healing::before {
+  background: radial-gradient(ellipse at center, transparent 52%, rgba(45,198,83,0.4) 100%);
+  animation: healPulse 1.6s ease-in-out infinite;
+}
+@keyframes healPulse { 0%,100% { opacity: 0.3; } 50% { opacity: 0.65; } }
+
+/* Outside the storm — purple danger edges */
+#vignette-layer.storm::before {
+  background: radial-gradient(ellipse at center, transparent 44%, rgba(123,0,255,0.5) 100%);
+  animation: stormPulse 2s ease-in-out infinite;
+}
+@keyframes stormPulse { 0%,100% { opacity: 0.35; } 50% { opacity: 0.6; } }
+
+/* Aiming down sights — scope vignette */
+#vignette-layer.ads::after {
+  opacity: 1;
+  background: radial-gradient(ellipse at center, transparent 52%, rgba(0,0,0,0.78) 100%);
+}
+
 /* ── HUD ───────────────────────────────────────────────────── */
 #hud {
   position: absolute; inset: 0;
   pointer-events: none;
   font-family: var(--font-hud);
+  z-index: 10;
 }
 
 /* Top bar */
@@ -360,6 +413,8 @@ html, body {
 #player-count-hud .sep { color: var(--text-muted); margin: 0 0.2rem; }
 #storm-timer-hud { color: var(--info); }
 .storm-label { font-size: 0.7rem; letter-spacing: 0.15em; color: var(--text-muted); margin-right: 0.4rem; }
+#daynight-hud { color: var(--accent); font-size: 0.85rem; letter-spacing: 0.06em; }
+#daynight-indicator { text-shadow: 0 0 8px rgba(245,166,35,0.4); }
 #ping-hud { color: var(--text-secondary); font-size: 0.8rem; }
 
 /* Minimap */
@@ -500,7 +555,13 @@ html, body {
   top: 50%; left: 50%; transform: translate(-50%, -50%);
   width: 20px; height: 20px;
   pointer-events: none;
+  transition: transform 0.08s ease-out;
 }
+/* Dynamic crosshair: widens while moving/firing, tightens while ADS */
+body.moving #crosshair { transform: translate(-50%, -50%) scale(1.2); }
+body.firing #crosshair { transform: translate(-50%, -50%) scale(1.45); }
+body.ads #crosshair { transform: translate(-50%, -50%) scale(0.8); }
+body.ads #crosshair div { background: rgba(255,255,255,0.7); }
 .ch-top, .ch-bottom, .ch-left, .ch-right {
   position: absolute;
   background: rgba(255,255,255,0.9);

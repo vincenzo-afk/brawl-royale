@@ -25,6 +25,11 @@ export class BotController {
     // Combat cooldowns
     this.lastShotTime = 0;
     this.shotCooldown = 400 + Math.random() * 600;     // reaction speed
+
+    // Stuck detection
+    this.lastX = player.x;
+    this.lastY = player.y;
+    this.stuckTime = 0;
   }
 
   update(now, dt) {
@@ -132,6 +137,31 @@ export class BotController {
     let flags = 0;
     let aimAngle = p.angle;
 
+    // ── Stuck detection: if we barely moved while chasing a target,
+    //    pick a fresh direction so bots don't grind against walls ──
+    const moved = Math.hypot(p.x - this.lastX, p.y - this.lastY);
+    if (moved < 3) {
+      this.stuckTime += dt * 1000;
+      if (this.stuckTime > 1200) {
+        this.stuckTime = 0;
+        if (this.state !== 'hunting') {
+          this.state = 'wandering';
+          const angle = Math.random() * Math.PI * 2;
+          this.targetX = p.x + Math.cos(angle) * 250;
+          this.targetY = p.y + Math.sin(angle) * 250;
+        } else {
+          // Try flanking the target instead of walking into the wall
+          const off = (Math.random() * 2 - 1) * 120;
+          this.targetX = this.targetEntity?.x + off || p.x;
+          this.targetY = this.targetEntity?.y + off || p.y;
+        }
+      }
+    } else {
+      this.stuckTime = 0;
+    }
+    this.lastX = p.x;
+    this.lastY = p.y;
+
     // Target position coordinates
     let tx = this.targetX;
     let ty = this.targetY;
@@ -192,6 +222,15 @@ export class BotController {
           flags |= INPUT_FLAGS.RELOAD;
         }
       }
+    }
+
+    // ── Heal when badly hurt ────────────────────────────────
+    if (!p.isHealing && p.health < 50) {
+      for (const slot of [3, 4, 5]) {
+        if (p.inventory[slot]?.itemId) {
+          if (p.startHealing(slot)) break;
+        }
+      }
     } else if (this.state === 'looting' && this.targetEntity) {
       if (dist <= 40) {
         flags |= INPUT_FLAGS.USE; // Interact key
@@ -209,7 +248,7 @@ export class BotController {
     };
 
     // Apply movement & update variables
-    p.applyInput(simulatedInput, dt);
+    p.applyInput(simulatedInput, dt, this.room.world);
     p.lastProcessedInput = simulatedInput.seq;
 
     // Clamp to map boundaries
@@ -225,6 +264,11 @@ export class BotController {
     if (flags & INPUT_FLAGS.FIRE) {
       const events = this.room.combat.processFireInput(p, simulatedInput, this.room.players, this.room.projectiles);
       if (events) this.room.processCombatEvents(events, p);
+    }
+
+    // Auto-reload for bots
+    if (flags & INPUT_FLAGS.RELOAD) {
+      this.room.combat.tryReload(p);
     }
 
     // Auto-complete looting events for bots

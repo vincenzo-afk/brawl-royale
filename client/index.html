@@ -86,6 +86,9 @@
     <div id="game-layer" class="hidden">
       <canvas id="game-canvas"></canvas>
 
+      <!-- Screen-space vignettes: damage / low HP / healing / ADS / storm -->
+      <div id="vignette-layer"></div>
+
       <!-- HUD overlay (HTML over canvas) -->
       <div id="hud">
         <!-- Top bar -->
@@ -99,6 +102,9 @@
           <div id="storm-timer-hud">
             <span class="storm-label">STORM</span>
             <span id="hud-storm-time">--:--</span>
+          </div>
+          <div id="daynight-hud">
+            <span id="daynight-indicator">☀️ 12:00</span>
           </div>
           <div id="ping-hud">
             <span id="hud-ping">--- ms</span>

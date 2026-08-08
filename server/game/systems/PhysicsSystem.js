@@ -1,7 +1,7 @@
 // ============================================================
 // PHYSICS SYSTEM — server-side movement + collision
 // ============================================================
-import { MAP_WIDTH, MAP_HEIGHT, PLAYER_RADIUS } from 'battle-royale-shared';
+import { MAP_WIDTH, MAP_HEIGHT, PLAYER_RADIUS, PLAYER_PLAYER_COLLISION } from 'battle-royale-shared';
 
 export class PhysicsSystem {
   constructor(world) {
@@ -13,42 +13,68 @@ export class PhysicsSystem {
     for (const player of players.values()) {
       if (!player.isAlive) continue;
 
-      // Process all buffered inputs since last tick
-      while (player.inputBuffer.length > 0) {
-        const input = player.inputBuffer.shift();
-        player.applyInput(input, dt);
-        player.lastProcessedInput = input.seq;
+      // Buffered inputs arrive at ~60Hz while the server ticks at 20Hz,
+      // so ~3 inputs land per tick. Each input represents 1/60s of
+      // movement — applying the full tick dt to each would move the
+      // player ~3× too fast. Normalize by distributing the tick dt
+      // across the buffered inputs.
+      const buffered = player.inputBuffer.length;
+      if (buffered > 0) {
+        const perInputDt = dt / buffered;
+        while (player.inputBuffer.length > 0) {
+          const input = player.inputBuffer.shift();
+          player.applyInput(input, perInputDt, this.world);
+          player.lastProcessedInput = input.seq;
+        }
       }
 
       // Clamp to world bounds
       player.x = Math.max(PLAYER_RADIUS, Math.min(MAP_WIDTH - PLAYER_RADIUS, player.x));
       player.y = Math.max(PLAYER_RADIUS, Math.min(MAP_HEIGHT - PLAYER_RADIUS, player.y));
 
-      // Tile-based collision with solid tiles
+      // Tile-based collision with solid tiles (same resolver as client)
       this.resolveMapCollision(player);
+    }
+
+    // Player-vs-player soft collision
+    if (PLAYER_PLAYER_COLLISION) {
+      const alive = [...players.values()].filter(p => p.isAlive);
+      for (let i = 0; i < alive.length; i++) {
+        for (let j = i + 1; j < alive.length; j++) {
+          const a = alive[i];
+          const b = alive[j];
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const minDist = a.radius + b.radius;
+          if (dist >= minDist || dist === 0) continue;
+
+          // Push both apart along the separation axis
+          const push = (minDist - dist) * 0.5;
+          const nx = dx / dist;
+          const ny = dy / dist;
+          a.x -= nx * push;
+          a.y -= ny * push;
+          b.x += nx * push;
+          b.y += ny * push;
+          a.markDirty('x', 'y');
+          b.markDirty('x', 'y');
+
+          // Re-resolve map collision so nobody gets pushed into a wall
+          this.resolveMapCollision(a);
+          this.resolveMapCollision(b);
+        }
+      }
     }
   }
 
   resolveMapCollision(player) {
     if (!this.world) return;
-
-    const r = player.radius;
-    const checkPoints = [
-      [player.x - r, player.y],
-      [player.x + r, player.y],
-      [player.x, player.y - r],
-      [player.x, player.y + r],
-    ];
-
-    for (const [cx, cy] of checkPoints) {
-      if (this.world.isSolid(cx, cy)) {
-        const result = this.world.resolvePlayerTile(player.x, player.y, r, cx, cy);
-        if (result) {
-          player.x = result.x;
-          player.y = result.y;
-          player.markDirty('x', 'y');
-        }
-      }
+    const result = this.world.resolveCircle(player.x, player.y, player.radius);
+    if (result.x !== player.x || result.y !== player.y) {
+      player.x = result.x;
+      player.y = result.y;
+      player.markDirty('x', 'y');
     }
   }
 

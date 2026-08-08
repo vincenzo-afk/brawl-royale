@@ -1,15 +1,26 @@
 // ============================================================
 // CLIENT-SIDE PREDICTION
 // Input is applied immediately on the local player without
-// waiting for server confirmation.
+// waiting for server confirmation. Must mirror the server's
+// Player.applyInput + PhysicsSystem behavior exactly so the
+// authoritative state and the predicted state stay in lockstep.
 // ============================================================
-import { INPUT_FLAGS, PLAYER_BASE_SPEED, PLAYER_SPRINT_MULTIPLIER, PLAYER_CROUCH_MULTIPLIER, MAP_WIDTH, MAP_HEIGHT, PLAYER_RADIUS } from 'battle-royale-shared';
+import {
+  INPUT_FLAGS, PLAYER_BASE_SPEED, PLAYER_SPRINT_MULTIPLIER, PLAYER_CROUCH_MULTIPLIER,
+  PLAYER_AIM_WALK_SPEED, PLAYER_SWIM_SPEED,
+  MAP_WIDTH, MAP_HEIGHT, PLAYER_RADIUS,
+} from 'battle-royale-shared';
 
 export class Prediction {
   constructor() {
     this.pendingInputs = [];   // inputs not yet acked by server
     this.inputSeq = 0;
     this.enabled = true;
+    this.tileMap = null;       // set from server map data for local collision
+  }
+
+  setMap(tileMap) {
+    this.tileMap = tileMap;
   }
 
   // Apply input locally to local player state
@@ -23,10 +34,13 @@ export class Prediction {
     const right  = !!(flags & INPUT_FLAGS.RIGHT);
     const sprint = !!(flags & INPUT_FLAGS.SPRINT);
     const crouch = !!(flags & INPUT_FLAGS.CROUCH);
+    const ads    = !!(flags & INPUT_FLAGS.ADS);
 
     let spd = PLAYER_BASE_SPEED;
-    if (sprint && !crouch) spd *= PLAYER_SPRINT_MULTIPLIER;
+    if (sprint && !crouch && !ads) spd *= PLAYER_SPRINT_MULTIPLIER;
     if (crouch) spd *= PLAYER_CROUCH_MULTIPLIER;
+    if (ads) spd = Math.min(spd, PLAYER_AIM_WALK_SPEED);
+    if (this.tileMap?.isWaterAt?.(localPlayer.x, localPlayer.y)) spd = Math.min(spd, PLAYER_SWIM_SPEED);
 
     let dx = 0, dy = 0;
     if (up)    dy -= 1;
@@ -43,10 +57,22 @@ export class Prediction {
     localPlayer.x += dx * spd * dt;
     localPlayer.y += dy * spd * dt;
     localPlayer.angle = input.angle ?? localPlayer.angle;
+    localPlayer.isADS = ads;
+    localPlayer.isSprinting = sprint && !crouch && !ads;
+    localPlayer.isCrouching = crouch;
 
     // Clamp to world
     localPlayer.x = Math.max(PLAYER_RADIUS, Math.min(MAP_WIDTH - PLAYER_RADIUS, localPlayer.x));
     localPlayer.y = Math.max(PLAYER_RADIUS, Math.min(MAP_HEIGHT - PLAYER_RADIUS, localPlayer.y));
+
+    // Local tile collision — same resolver the server uses, so the
+    // client slides along walls instead of phasing through them and
+    // getting snapped back by reconciliation.
+    if (this.tileMap) {
+      const resolved = this.tileMap.resolveCircle(localPlayer.x, localPlayer.y, PLAYER_RADIUS);
+      localPlayer.x = resolved.x;
+      localPlayer.y = resolved.y;
+    }
   }
 
   // Store input for reconciliation

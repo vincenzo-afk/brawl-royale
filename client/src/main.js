@@ -72,9 +72,12 @@ async function boot() {
   // Network
   const network = new NetworkClient();
 
-  // Audio
+  // Audio (procedural WebAudio — unlock on first user gesture)
   const audio = new AudioManager();
   audio.registerAll();
+  const unlockAudio = () => { audio.unlock(); };
+  window.addEventListener('pointerdown', unlockAudio, { once: true });
+  window.addEventListener('keydown', unlockAudio, { once: true });
 
   // Game instance
   const game = new Game(network, audio);

@@ -1,7 +1,7 @@
 // ============================================================
 // MINIMAP
 // ============================================================
-import { MAP_WIDTH, MAP_HEIGHT } from 'battle-royale-shared';
+import { MAP_WIDTH, MAP_HEIGHT, TILE_SIZE, isSolidTile, isWaterTile } from 'battle-royale-shared';
 
 export class Minimap {
   constructor() {
@@ -11,7 +11,7 @@ export class Minimap {
     this.$phase = document.getElementById('mm-phase');
   }
 
-  render(localPlayer, remotePlayers, storm, lootItems = []) {
+  render(localPlayer, remotePlayers, storm, mapData = null, lootItems = []) {
     if (!this.ctx) return;
     const ctx = this.ctx;
     const s = this.size;
@@ -20,9 +20,46 @@ export class Minimap {
 
     ctx.clearRect(0, 0, s, s);
 
-    // Background
-    ctx.fillStyle = 'rgba(10,15,10,0.92)';
-    ctx.fillRect(0, 0, s, s);
+    // Map base — walls, water and place markers
+    if (mapData?.collision) {
+      const { tilesX, tilesY, collision, pois } = mapData;
+      const step = 2;
+      for (let ty = 0; ty < tilesY; ty += step) {
+        for (let tx = 0; tx < tilesX; tx += step) {
+          const tile = collision[ty * tilesX + tx];
+          if (isSolidTile(tile)) {
+            ctx.fillStyle = 'rgba(45,45,50,0.95)';
+            ctx.fillRect(tx * TILE_SIZE * scaleX, ty * TILE_SIZE * scaleY, 2, 2);
+          } else if (isWaterTile(tile)) {
+            ctx.fillStyle = 'rgba(60,120,190,0.55)';
+            ctx.fillRect(tx * TILE_SIZE * scaleX, ty * TILE_SIZE * scaleY, 2, 2);
+          }
+        }
+      }
+
+      // Named places
+      if (pois) {
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        for (const poi of pois) {
+          const px = poi.x * scaleX;
+          const py = poi.y * scaleY;
+          ctx.fillStyle = '#ffd60a';
+          ctx.beginPath();
+          ctx.arc(px, py, 2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.font = '600 7px Rajdhani, sans-serif';
+          ctx.fillStyle = 'rgba(255,255,255,0.9)';
+          ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+          ctx.lineWidth = 1.5;
+          ctx.strokeText(poi.name.toUpperCase().slice(0, 12), px, py + 3);
+          ctx.fillText(poi.name.toUpperCase().slice(0, 12), px, py + 3);
+        }
+      }
+    } else {
+      ctx.fillStyle = 'rgba(10,15,10,0.92)';
+      ctx.fillRect(0, 0, s, s);
+    }
 
     // Storm ring
     if (storm) {
