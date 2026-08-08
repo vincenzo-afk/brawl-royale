@@ -83,37 +83,6 @@ async function boot() {
   const lobby = new Lobby(network);
   const leaderboard = new Leaderboard();
 
-  setProgress(60, 'Connecting…');
-
-  const serverStatus = document.getElementById('server-status');
-
-  try {
-    await network.connect();
-    setProgress(90, 'Connected!');
-    if (serverStatus) {
-      serverStatus.textContent = '● Connected';
-      serverStatus.className = 'server-status connected';
-    }
-  } catch (err) {
-    setProgress(100, 'Failed to connect. Retrying…');
-    if (serverStatus) {
-      serverStatus.textContent = '● Offline — server unreachable';
-      serverStatus.className = 'server-status error';
-    }
-  }
-
-  setProgress(100, 'Ready!');
-
-  // ── Transition to main menu ──────────────────────────────
-  await sleep(600);
-  const loadingEl = document.getElementById('loading-screen');
-  if (loadingEl) {
-    loadingEl.style.opacity = '0';
-    await sleep(500);
-    loadingEl.style.display = 'none';
-  }
-  showScreen('main-menu');
-
   // ── Network event handlers ───────────────────────────────
   network.on(S2C.CONNECTED, ({ playerId }) => {
     game.setLocalPlayerId(playerId);
@@ -174,6 +143,37 @@ async function boot() {
       serverStatus.className = 'server-status connected';
     }
   });
+
+  setProgress(60, 'Connecting…');
+
+  const serverStatus = document.getElementById('server-status');
+
+  try {
+    await network.connect();
+    setProgress(90, 'Connected!');
+    if (serverStatus) {
+      serverStatus.textContent = '● Connected';
+      serverStatus.className = 'server-status connected';
+    }
+  } catch (err) {
+    setProgress(100, 'Failed to connect. Retrying…');
+    if (serverStatus) {
+      serverStatus.textContent = '● Offline — server unreachable';
+      serverStatus.className = 'server-status error';
+    }
+  }
+
+  setProgress(100, 'Ready!');
+
+  // ── Transition to main menu ──────────────────────────────
+  await sleep(600);
+  const loadingEl = document.getElementById('loading-screen');
+  if (loadingEl) {
+    loadingEl.style.opacity = '0';
+    await sleep(500);
+    loadingEl.style.display = 'none';
+  }
+  showScreen('main-menu');
 
   // ── Button handlers ──────────────────────────────────────
   const getName = () => (document.getElementById('player-name')?.value || 'Brawler').trim().slice(0, 16);
