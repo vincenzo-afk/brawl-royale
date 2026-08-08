@@ -19,8 +19,5 @@
       "src": "/(.*)",
       "dest": "/index.html"
     }
-  ],
-  "env": {
-    "VITE_SERVER_URL": "@battle-royale-server-url"
-  }
+  ]
 }
