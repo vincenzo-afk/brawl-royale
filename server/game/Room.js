@@ -313,6 +313,11 @@ export class Room {
     if (airdrop) {
       this.emit(S2C.AIRDROP_INCOMING, { x: airdrop.x, y: airdrop.y, eta: airdrop.eta });
       setTimeout(() => {
+        // Broadcast the crate's contents now that it has landed (the
+        // items existed server-side but were never sent to clients).
+        if (airdrop.items?.length) {
+          this.emit(S2C.LOOT_SPAWN, { items: airdrop.items });
+        }
         this.emit(S2C.AIRDROP_LANDED, { x: airdrop.x, y: airdrop.y, lootIds: airdrop.lootIds });
       }, airdrop.eta);
     }

@@ -1,11 +1,11 @@
 // ============================================================
-// GAME — main game loop + state machine
+// GAME — main game loop + state machine (3D)
 // ============================================================
 import { S2C, CLIENT_TICK_RATE, TileMap, INPUT_FLAGS, HEALING_ITEMS, MAP_WIDTH, MAP_HEIGHT } from 'battle-royale-shared';
 import { WEAPON_META } from './game/WeaponMeta.js';
 import { DayNightCycle } from './game/DayNightCycle.js';
-import { Renderer } from './engine/Renderer.js';
-import { Camera } from './engine/Camera.js';
+import { ThreeRenderer } from './engine/ThreeRenderer.js';
+import { Camera3D } from './engine/Camera3D.js';
 import { InputHandler } from './engine/InputHandler.js';
 import { Prediction } from './network/Prediction.js';
 import { Reconciliation } from './network/Reconciliation.js';
@@ -27,10 +27,10 @@ export class Game {
     this.network = network;
     this.audio = audioManager;
 
-    // Canvas setup
+    // 3D engine setup
     this.canvas = document.getElementById('game-canvas');
-    this.renderer = new Renderer(this.canvas);
-    this.camera = new Camera(window.innerWidth, window.innerHeight);
+    this.renderer = new ThreeRenderer(this.canvas);
+    this.camera = new Camera3D();
     this.input = new InputHandler(this.canvas);
 
     // Networking
@@ -62,15 +62,13 @@ export class Game {
     this._prevHeal = false;
     this._wasAds = false;
     this._lastLightning = 0;
-    this._lightningFlash = 0;
     this._lastStormGust = 0;
     this._stormGustInterval = 0;
     this._victoryFrames = 0;
-    this._preAdsZoom = null;
     this._fireflyAcc = 0;
     this._lastDayNightLabel = null;
     this.dayNight = new DayNightCycle();
-    this._anim = new Map();   // id → { phase, speed, lastX, lastY }
+    this._preAdsZoom = null;
 
     // Loop
     this._raf = null;
@@ -82,6 +80,7 @@ export class Game {
     this._setupNetworkHandlers();
     this._setupResizeHandler();
     this._setupDeathScreenButtons();
+    this._setupPointerLock();
   }
 
   // ── Network handlers ──────────────────────────────────────
@@ -103,7 +102,11 @@ export class Game {
       if (data?.playerId === this.localPlayerId) this.audio.playPickup();
     });
     net.on(S2C.PROJECTILE_SPAWN, (proj) => this.projectiles.set(proj.id, proj));
-    net.on(S2C.PROJECTILE_DESTROY, ({ id }) => this.projectiles.delete(id));
+    net.on(S2C.PROJECTILE_DESTROY, ({ id }) => {
+      const proj = this.projectiles.get(id);
+      if (proj?.weaponId === 'RPG') this.renderer.addExplosion(proj.x, proj.y);
+      this.projectiles.delete(id);
+    });
     net.on(S2C.MATCH_END, (data) => this._onMatchEnd(data));
     net.on(S2C.PLACEMENT, (data) => { this.placementRank = data; });
     net.on(S2C.PONG, (data) => {
@@ -112,6 +115,9 @@ export class Game {
     });
     net.on(S2C.AIRDROP_INCOMING, (data) => {
       this._airdropIndicators.push({ ...data, until: Date.now() + data.eta + 5000 });
+    });
+    net.on(S2C.AIRDROP_LANDED, () => {
+      this.audio.playAirdrop();
     });
     net.on(S2C.PLAYER_SPECTATING, ({ targetId }) => {
       this.spectatingId = targetId;
@@ -129,8 +135,9 @@ export class Game {
     this.prediction.reset();
     this._airdropIndicators = [];
     this._reloadShown = false;
+    this.renderer.resetEntities();
 
-    // Build the local collision grid + render data from the server map
+    // Build the local collision grid + 3D world from the server map
     this._applyMap(data.map);
 
     // Init all players
@@ -149,13 +156,17 @@ export class Game {
     this.storm = data.storm;
     this.localPlayer = { ...this.players.get(this.localPlayerId) };
 
-    // Center camera on spawn
+    // Point the camera at the spawn + aim direction
     if (this.localPlayer) {
-      this.camera.x = this.localPlayer.x;
-      this.camera.y = this.localPlayer.y;
+      this.camera.reset();
+      this.camera.snapYaw(this.localPlayer.angle || 0);
+      this.camera.targetX = this.localPlayer.x;
+      this.camera.targetY = this.localPlayer.y;
+      this.input.cameraYaw = this.camera.yaw;
     }
 
     this.input.enable();
+    this._requestPointerLock();
     this._startLoop();
   }
 
@@ -171,6 +182,8 @@ export class Game {
       collision: this.tileMap.collision,
       pois: mapPayload.pois || [],
     };
+    // Build the 3D terrain (idempotent)
+    this.renderer.buildWorld(this.mapData);
   }
 
   // ── Delta state from server ───────────────────────────────
@@ -282,7 +295,7 @@ export class Game {
     if (targetId) {
       const t = this.interpolation.getInterpolatedState(targetId, Date.now()) || this.players.get(targetId);
       if (t) {
-        this.renderer.addDamageNumber(t.x, t.y - 22, damage, isHeadshot, killed);
+        this.renderer.addDamageNumber(t.x, t.y, damage, isHeadshot, killed);
         this.renderer.addImpact(t.x, t.y, isHeadshot);
         if (killed) this.renderer.addBloodPool(t.x, t.y);
       }
@@ -322,6 +335,26 @@ export class Game {
     }
   }
 
+  // ── Pointer lock ──────────────────────────────────────────
+  _setupPointerLock() {
+    this.canvas.addEventListener('click', () => this._requestPointerLock());
+    document.addEventListener('pointerlockchange', () => {
+      const locked = document.pointerLockElement === this.canvas;
+      this.input.pointerLocked = locked;
+      const overlay = document.getElementById('pointer-lock-overlay');
+      if (overlay) {
+        overlay.classList.toggle('hidden', locked || this.state !== GAME_STATE.PLAYING);
+      }
+    });
+  }
+
+  _requestPointerLock() {
+    if (this.state !== GAME_STATE.PLAYING) return;
+    if (document.pointerLockElement !== this.canvas) {
+      this.canvas.requestPointerLock?.();
+    }
+  }
+
   // ── Input loop (60Hz) ─────────────────────────────────────
   _startInputLoop() {
     const dt = 1 / CLIENT_TICK_RATE;
@@ -332,10 +365,11 @@ export class Game {
 
       const seq = this.prediction.nextSeq();
       const flags = this.input.getFlags();
-      const angle = this.input.getAimAngle();
+      const angle = this.camera.yaw;                 // aim = camera yaw
       const switchSlot = this.input.getSlotSwitch();
+      const { moveX, moveY } = this.input.getMoveVector();
 
-      const input = { seq, flags, angle, dt, switchSlot };
+      const input = { seq, flags, angle, dt, switchSlot, moveX, moveY };
 
       // Apply locally (prediction)
       this.prediction.applyInput(this.localPlayer, input);
@@ -356,14 +390,14 @@ export class Game {
 
         if (now - this._lastFireTime >= cooldown) {
           this._lastFireTime = now;
-          const mx = this.localPlayer.x + Math.cos(a) * 26;
-          const my = this.localPlayer.y + Math.sin(a) * 26;
+          const mx = this.localPlayer.x + Math.cos(a) * 34;
+          const my = this.localPlayer.y + Math.sin(a) * 34;
 
           // Empty magazine → dry-fire click, no muzzle flash
           if (wid !== 'FISTS' && (aw?.ammoInMag ?? Infinity) <= 0) {
             this.audio.playDryFire();
           } else {
-            this.renderer.addMuzzleFlash(mx, my, a);
+            this.renderer.addMuzzleFlash(this.localPlayer.x, this.localPlayer.y, a, wid);
             this.audio.playWeaponFire(wid);
             this.camera.shake(0.5);
 
@@ -377,7 +411,7 @@ export class Game {
       }
 
       // Footsteps + dust while moving
-      const moving = !!(flags & (INPUT_FLAGS.UP | INPUT_FLAGS.DOWN | INPUT_FLAGS.LEFT | INPUT_FLAGS.RIGHT));
+      const moving = Math.hypot(moveX, moveY) > 0.05;
       if (moving) {
         const speedFactor = (flags & INPUT_FLAGS.SPRINT) && !(flags & (INPUT_FLAGS.CROUCH | INPUT_FLAGS.ADS))
           ? 0.62 : (flags & (INPUT_FLAGS.CROUCH | INPUT_FLAGS.ADS)) ? 1.7 : 1;
@@ -385,7 +419,7 @@ export class Game {
           this._lastFootstep = now;
           this.audio.playFootstep();
           const backX = this.localPlayer.x - Math.cos(this.localPlayer.angle) * 8;
-          this.renderer.addDust(backX, this.localPlayer.y + 13);
+          this.renderer.addDust(backX, this.localPlayer.y);
         }
       }
 
@@ -393,17 +427,13 @@ export class Game {
       document.body.classList.toggle('moving', moving);
       document.body.classList.toggle('firing', !!(flags & INPUT_FLAGS.FIRE));
 
-      // ADS zoom + overlay (preserve the user's wheel zoom level)
+      // ADS — camera FOV zoom + overlay
       if (this.input.rightMouseDown) {
-        if (!this._wasAds) {
-          this._wasAds = true;
-          this._preAdsZoom = this.camera.targetZoom;
-        }
-        this.camera.targetZoom = Math.min(this.camera.maxZoom, (this._preAdsZoom || 1) * 1.12);
+        if (!this._wasAds) this._wasAds = true;
+        this.camera.setAds(true);
       } else if (this._wasAds) {
         this._wasAds = false;
-        this.camera.targetZoom = this._preAdsZoom || 1.0;
-        this._preAdsZoom = null;
+        this.camera.setAds(false);
       }
       document.body.classList.toggle('ads', this.input.rightMouseDown);
 
@@ -413,9 +443,9 @@ export class Game {
       // Update HUD
       this._updateHUD();
 
-      // Zoom from mouse wheel
+      // Camera distance from mouse wheel
       const wheel = this.input.consumeWheel();
-      if (wheel !== 0) this.camera.adjustZoom(wheel);
+      if (wheel !== 0) this.camera.adjustDistance(wheel);
 
       this._inputTick++;
     }, 1000 / CLIENT_TICK_RATE);
@@ -513,91 +543,30 @@ export class Game {
   }
 
   _render(dt, now) {
-    const ctx = this.renderer.ctx;
-    const canvas = this.renderer.canvas;
-
-    // Determine camera target
+    // ── Camera target ──────────────────────────────────────
     let camTarget = this.localPlayer;
     if (this.state === GAME_STATE.DEAD || this.state === GAME_STATE.SPECTATING) {
       camTarget = this.players.get(this.spectatingId) || camTarget;
     }
 
     if (camTarget) {
-      this.camera.follow(camTarget.x, camTarget.y, dt);
+      this.camera.targetX = camTarget.x;
+      this.camera.targetY = camTarget.y;
     }
 
-    this.renderer.clear();
-
-    // Apply camera transform
-    this.camera.begin(ctx);
-
-    // Draw map
-    if (this.mapData) {
-      this.renderer.drawMap(this.mapData);
-    } else {
-      this.renderer.drawBackground();
-    }
-
-    // Draw loot
-    for (const item of this.lootItems.values()) {
-      this.renderer.drawLootItem(item, now);
-    }
-
-    // Draw projectiles
-    for (const proj of this.projectiles.values()) {
-      this.renderer.drawProjectile(proj);
-    }
-
-    // Draw remote players (interpolated, animated)
-    for (const [id, player] of this.players) {
-      if (id === this.localPlayerId) continue;
-      const interpState = this.interpolation.getInterpolatedState(id, now);
-      if (interpState) {
-        const anim = this._updateAnim(id, interpState.x, interpState.y, dt);
-        this.renderer.drawPlayer({ ...player, ...interpState }, false, now, anim);
-      }
-    }
-
-    // Draw local player (predicted, animated)
-    if (this.localPlayer && (this.state === GAME_STATE.PLAYING)) {
-      const anim = this._updateAnim(this.localPlayerId, this.localPlayer.x, this.localPlayer.y, dt);
-      this.renderer.drawPlayer(this.localPlayer, true, now, anim);
-    }
-
-    // Draw storm (animated ring)
-    if (this.storm) {
-      this.renderer.drawStorm(this.storm, now);
-    }
-
-    // Draw effects
-    this.renderer.drawEffects(now);
-
-    // Airdrops
-    for (const ad of this._airdropIndicators) {
-      if (now < ad.until) this.renderer.drawAirdropIndicator(ad.x, ad.y, now);
-    }
-    this._airdropIndicators = this._airdropIndicators.filter(a => now < a.until);
-
-    // End camera transform
-    this.camera.end(ctx);
+    // Mouse-look
+    const look = this.input.consumeLook();
+    if (look.dx || look.dy) this.camera.rotateLook(look.dx, look.dy);
+    this.camera.update(dt, this.renderer.threeCamera);
+    this.input.cameraYaw = this.camera.yaw;
 
     // ── Day/night cycle (elapsed since match start) ─────────
     const dn = this.dayNight.getState(this.spawnTime ? Date.now() - this.spawnTime : 0);
-
-    // ── Dynamic lighting (screen space) ─────────────────────
-    const lightBoost = 0.7 + dn.nightFactor * 0.9;
-    const radiusBoost = 0.85 + dn.nightFactor * 0.55;
-    const lights = [];
-    for (const p of this.players.values()) {
-      if (!p.alive) continue;
-      const s = this.camera.worldToScreen(p.x, p.y);
-      const isLocal = p.id === this.localPlayerId;
-      lights.push({
-        x: s.x, y: s.y,
-        radius: (isLocal ? 250 : 150) * radiusBoost,
-        intensity: (isLocal ? 0.9 : 0.55) * lightBoost,
-        color: isLocal ? '#ffd9a0' : '#cfe6ff',
-      });
+    const label = `${dn.icon} ${dn.clockLabel}`;
+    if (label !== this._lastDayNightLabel) {
+      this._lastDayNightLabel = label;
+      const el = document.getElementById('daynight-indicator');
+      if (el) el.textContent = label;
     }
 
     // Fireflies drift out at night
@@ -620,11 +589,16 @@ export class Game {
       const inStorm = dist > (this.storm.currentRadius || 0);
       if (inStorm) {
         this.audio.playStormLoop(true);
-        if (Math.random() < 0.005 && now - this._lastLightning > 4000) {
+        if (Math.random() < 0.006 && now - this._lastLightning > 4000) {
           this._lastLightning = now;
-          this._lightningFlash = 1;
           this.audio.playThunder();
-          this.renderer.stormStrike(now);
+          this.renderer.flashLightning();
+          const a = Math.random() * Math.PI * 2;
+          const r = (this.storm.currentRadius || 800) * (0.85 + Math.random() * 0.2);
+          this.renderer.addLightningBolt(
+            this.storm.centerX + Math.cos(a) * r,
+            this.storm.centerY + Math.sin(a) * r
+          );
         }
         // Periodic wind gusts (interval picked once per reset)
         if (now - this._lastStormGust > this._stormGustInterval || this._lastStormGust === 0) {
@@ -635,41 +609,16 @@ export class Game {
       } else {
         this.audio.playStormLoop(false);
         // Occasional visible bolt when watching the storm from outside
-        if (Math.random() < 0.002 && now - this._lastLightning > 5000) {
+        if (Math.random() < 0.003 && now - this._lastLightning > 5000) {
           this._lastLightning = now;
-          this.renderer.stormStrike(now);
+          const a = Math.random() * Math.PI * 2;
+          const r = (this.storm.currentRadius || 800);
+          this.renderer.addLightningBolt(
+            this.storm.centerX + Math.cos(a) * r,
+            this.storm.centerY + Math.sin(a) * r
+          );
         }
       }
-    }
-    this._lightningFlash = Math.max(0, (this._lightningFlash || 0) - dt * 2.2);
-    this.renderer.renderLighting(lights, {
-      flash: this._lightningFlash,
-      ambient: dn.ambient,
-      tint: dn.tint,
-    });
-
-    // ── Storm rain overlay (screen space, masked to the storm) ─
-    if (this.storm && this.storm.currentRadius > 0) {
-      const sc = this.camera.worldToScreen(this.storm.centerX, this.storm.centerY);
-      let rainIntensity = 0.35;
-      if (this.localPlayer?.alive && this.state === GAME_STATE.PLAYING) {
-        const dist = Math.hypot(this.localPlayer.x - this.storm.centerX, this.localPlayer.y - this.storm.centerY);
-        rainIntensity = dist > this.storm.currentRadius ? 1 : 0.35;
-      } else if (this.state === GAME_STATE.DEAD || this.state === GAME_STATE.SPECTATING) {
-        rainIntensity = 0.8;
-      }
-      this.renderer.drawRainOverlay(
-        sc.x, sc.y, this.storm.currentRadius * this.camera.zoom,
-        dt, now, rainIntensity
-      );
-    }
-
-    // Sun/moon clock indicator
-    const label = `${dn.icon} ${dn.clockLabel}`;
-    if (label !== this._lastDayNightLabel) {
-      this._lastDayNightLabel = label;
-      const el = document.getElementById('daynight-indicator');
-      if (el) el.textContent = label;
     }
 
     // Victory confetti rain while celebrating
@@ -684,40 +633,35 @@ export class Game {
       }
     }
 
+    // ── Update + render the whole 3D scene ──────────────────
+    this.renderer.update(this, dt, now);
+
     // ── HUD overlays (vignette) ─────────────────────────────
     this._updateOverlays();
 
-    // Minimap (outside camera transform)
+    // Minimap (DOM canvas)
     const remotePlayers = [...this.players.values()].filter(p => p.id !== this.localPlayerId);
     this.minimap.render(this.localPlayer, remotePlayers, this.storm, this.mapData, [], now);
-  }
-
-  // Per-player walk animation state
-  _updateAnim(id, x, y, dt) {
-    let a = this._anim.get(id);
-    if (!a) {
-      a = { phase: Math.random() * 10, speed: 0, lastX: x, lastY: y };
-      this._anim.set(id, a);
-    }
-    const dist = Math.hypot(x - a.lastX, y - a.lastY);
-    const inst = dt > 0 ? dist / dt : 0;
-    a.speed = Math.min(400, (a.speed * 0.8) + inst * 0.2);
-    a.lastX = x;
-    a.lastY = y;
-    if (dist > 0.4) a.phase += Math.min(1.6, inst / 170) * Math.PI * 2 * dt;
-    return { phase: a.phase, speed: a.speed, moving: inst > 20 };
   }
 
   // Damage flash + persistent overlay states
   _updateOverlays() {
     const v = document.getElementById('vignette-layer');
-    if (!v || !this.localPlayer) return;
-    const p = this.localPlayer;
-    v.classList.toggle('lowhp', p.alive && p.health <= 30);
-    v.classList.toggle('healing', p.alive && !!p.isHealing);
-    v.classList.toggle('ads', this.input.rightMouseDown && this.state === GAME_STATE.PLAYING);
-    v.classList.toggle('storm', !!this.storm && p.alive && this.state === GAME_STATE.PLAYING
-      && Math.hypot(p.x - this.storm.centerX, p.y - this.storm.centerY) > (this.storm.currentRadius || 0));
+    if (v && this.localPlayer) {
+      const p = this.localPlayer;
+      v.classList.toggle('lowhp', p.alive && p.health <= 30);
+      v.classList.toggle('healing', p.alive && !!p.isHealing);
+      v.classList.toggle('ads', this.input.rightMouseDown && this.state === GAME_STATE.PLAYING);
+      v.classList.toggle('storm', !!this.storm && p.alive && this.state === GAME_STATE.PLAYING
+        && Math.hypot(p.x - this.storm.centerX, p.y - this.storm.centerY) > (this.storm.currentRadius || 0));
+    }
+
+    // Pointer-lock hint — visible whenever we're playing without mouse lock
+    const pl = document.getElementById('pointer-lock-overlay');
+    if (pl) {
+      const needLock = this.state === GAME_STATE.PLAYING && this.localPlayer?.alive && document.pointerLockElement !== this.canvas;
+      pl.classList.toggle('hidden', !needLock);
+    }
   }
 
   _flashDamage() {
@@ -734,7 +678,6 @@ export class Game {
   _setupResizeHandler() {
     const onResize = () => {
       this.renderer.resize(window.innerWidth, window.innerHeight);
-      this.camera.resize(window.innerWidth, window.innerHeight);
     };
     window.addEventListener('resize', onResize);
     onResize();
@@ -761,5 +704,6 @@ export class Game {
     this._stopLoop();
     this.input.disable();
     this.audio.playStormLoop(false);
+    this.renderer.renderer.dispose();
   }
 }

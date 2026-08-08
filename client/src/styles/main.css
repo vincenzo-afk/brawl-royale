@@ -694,6 +694,60 @@ body.ads #crosshair div { background: rgba(255,255,255,0.7); }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
 
+/* ── Pointer lock overlay ──────────────────────────────────── */
+#pointer-lock-overlay {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 30;
+  background: radial-gradient(ellipse at center, rgba(5,8,18,0.35) 0%, rgba(4,4,15,0.8) 100%);
+  cursor: pointer;
+  animation: plFadeIn 0.3s ease;
+}
+@keyframes plFadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.pl-card {
+  text-align: center;
+  padding: 2rem 3rem;
+  background: rgba(10,12,30,0.82);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  animation: plPulse 2.2s ease-in-out infinite;
+}
+@keyframes plPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.02); } }
+
+.pl-title {
+  font-family: var(--font-logo);
+  font-size: 1.8rem;
+  font-weight: 900;
+  letter-spacing: 0.25em;
+  color: var(--accent);
+  text-shadow: var(--glow-accent);
+  margin-bottom: 1.2rem;
+}
+
+.pl-keys {
+  display: flex; flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem 1.2rem;
+  max-width: 520px;
+}
+.pl-keys span {
+  font-family: var(--font-hud);
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+}
+.pl-keys b {
+  color: var(--text-primary);
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 4px;
+  padding: 0.1rem 0.45rem;
+  margin-right: 0.3rem;
+  font-weight: 700;
+}
+
 /* ── Responsive ────────────────────────────────────────────── */
 @media (max-width: 600px) {
   .menu-buttons { width: 240px; }

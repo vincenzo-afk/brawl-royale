@@ -175,6 +175,10 @@ export class LootSystem {
     const x = MAP_WIDTH * 0.2 + Math.random() * MAP_WIDTH * 0.6;
     const y = MAP_HEIGHT * 0.2 + Math.random() * MAP_HEIGHT * 0.6;
 
+    // Keep track of the crate's contents so the room can broadcast
+    // them to clients when the crate lands (airdrop loot was previously
+    // created but never emitted → clients never saw it).
+    const items = [];
     const lootIds = [];
     for (let i = 0; i < 5; i++) {
       const tier = i < 2 ? 'LEGENDARY' : i < 4 ? 'EPIC' : 'RARE';
@@ -183,9 +187,10 @@ export class LootSystem {
       const item = this.createLootOfType(LOOT_ITEM_TYPES.WEAPON, tier, lx, ly);
       this.lootItems.set(item.id, item);
       lootIds.push(item.id);
+      items.push(item.toSnapshot());
     }
 
-    return { x: Math.round(x), y: Math.round(y), lootIds, eta: 5000 };
+    return { x: Math.round(x), y: Math.round(y), lootIds, items, eta: 5000 };
   }
 
   // Drop player's inventory on death

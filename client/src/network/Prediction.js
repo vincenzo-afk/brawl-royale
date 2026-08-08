@@ -28,10 +28,6 @@ export class Prediction {
     if (!this.enabled) return;
 
     const flags = input.flags || 0;
-    const up     = !!(flags & INPUT_FLAGS.UP);
-    const down   = !!(flags & INPUT_FLAGS.DOWN);
-    const left   = !!(flags & INPUT_FLAGS.LEFT);
-    const right  = !!(flags & INPUT_FLAGS.RIGHT);
     const sprint = !!(flags & INPUT_FLAGS.SPRINT);
     const crouch = !!(flags & INPUT_FLAGS.CROUCH);
     const ads    = !!(flags & INPUT_FLAGS.ADS);
@@ -43,14 +39,26 @@ export class Prediction {
     if (this.tileMap?.isWaterAt?.(localPlayer.x, localPlayer.y)) spd = Math.min(spd, PLAYER_SWIM_SPEED);
 
     let dx = 0, dy = 0;
-    if (up)    dy -= 1;
-    if (down)  dy += 1;
-    if (left)  dx -= 1;
-    if (right) dx += 1;
+    const hasVec = typeof input.moveX === 'number' && typeof input.moveY === 'number';
+    if (hasVec) {
+      dx = input.moveX;
+      dy = input.moveY;
+      const len = Math.hypot(dx, dy);
+      if (len > 1) { dx /= len; dy /= len; }
+    } else {
+      const up     = !!(flags & INPUT_FLAGS.UP);
+      const down   = !!(flags & INPUT_FLAGS.DOWN);
+      const left   = !!(flags & INPUT_FLAGS.LEFT);
+      const right  = !!(flags & INPUT_FLAGS.RIGHT);
+      if (up)    dy -= 1;
+      if (down)  dy += 1;
+      if (left)  dx -= 1;
+      if (right) dx += 1;
 
-    if (dx !== 0 && dy !== 0) {
-      const len = Math.sqrt(dx * dx + dy * dy);
-      dx /= len; dy /= len;
+      if (dx !== 0 && dy !== 0) {
+        const len = Math.sqrt(dx * dx + dy * dy);
+        dx /= len; dy /= len;
+      }
     }
 
     const dt = input.dt || (1 / 60);

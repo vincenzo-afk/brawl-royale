@@ -3,7 +3,7 @@
 // Simulates human player input, movement, combat, looting,
 // and storm avoidance for AI players.
 // ============================================================
-import { INPUT_FLAGS, MAP_WIDTH, MAP_HEIGHT, TILE_SIZE } from 'battle-royale-shared';
+import { INPUT_FLAGS, MAP_WIDTH, MAP_HEIGHT, TILE_SIZE, S2C } from 'battle-royale-shared';
 import { WEAPONS } from '../weapons/WeaponDefinitions.js';
 
 export class BotController {

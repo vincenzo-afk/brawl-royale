@@ -4,10 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Brawl Royale — Multiplayer Battle Royale Shooter</title>
-  <meta name="description" content="A browser-based 2D battle royale multiplayer shooter. Drop in, loot up, be the last one standing." />
+  <meta name="description" content="A browser-based 3D battle royale multiplayer shooter. Drop in, loot up, be the last one standing." />
   <meta name="theme-color" content="#0a0a1a" />
   <meta property="og:title" content="Brawl Royale" />
-  <meta property="og:description" content="Real-time 2D multiplayer battle royale in your browser." />
+  <meta property="og:description" content="Real-time 3D multiplayer battle royale in your browser." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
@@ -29,7 +29,7 @@
       <div class="menu-bg"></div>
       <div class="menu-content">
         <h1 class="game-title">BRAWL<span class="accent">ROYALE</span></h1>
-        <p class="game-subtitle">2D Multiplayer Battle Royale</p>
+        <p class="game-subtitle">3D Multiplayer Battle Royale</p>
         <div class="player-setup">
           <input type="text" id="player-name" class="name-input" placeholder="Enter your name" maxlength="16" value="Brawler" />
           <div class="skin-picker" id="skin-picker">
@@ -88,6 +88,26 @@
 
       <!-- Screen-space vignettes: damage / low HP / healing / ADS / storm -->
       <div id="vignette-layer"></div>
+
+      <!-- Pointer lock hint (shown whenever mouse look is released) -->
+      <div id="pointer-lock-overlay" class="hidden">
+        <div class="pl-card">
+          <div class="pl-title">🖱 CLICK TO PLAY</div>
+          <div class="pl-keys">
+            <span><b>WASD</b> Move</span>
+            <span><b>Mouse</b> Look</span>
+            <span><b>LMB</b> Fire</span>
+            <span><b>RMB</b> Aim</span>
+            <span><b>Shift</b> Sprint</span>
+            <span><b>Ctrl</b> Crouch</span>
+            <span><b>E</b> Pick up</span>
+            <span><b>R</b> Reload</span>
+            <span><b>H</b> Heal</span>
+            <span><b>1/2/3</b> Weapons</span>
+            <span><b>Scroll</b> Zoom</span>
+          </div>
+        </div>
+      </div>
 
       <!-- HUD overlay (HTML over canvas) -->
       <div id="hud">
