@@ -56,7 +56,7 @@ export class MatchmakingSystem {
     const modeConfig = GAME_MODES[mode];
     if (!queue || !modeConfig) return;
 
-    if (queue.length < modeConfig.minToStart) return;
+    if (queue.length < 1) return;
 
     const now = Date.now();
 
@@ -94,7 +94,7 @@ export class MatchmakingSystem {
       if (matched.length >= modeConfig.maxPlayers) break;
     }
 
-    if (matched.length < modeConfig.minToStart) return;
+    if (matched.length < 1) return;
 
     // Remove matched players from queue
     this.queues[mode] = queue.filter((_, i) => !toRemove.has(i));

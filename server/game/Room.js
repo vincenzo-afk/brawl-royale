@@ -10,6 +10,7 @@ import { LootSystem } from './systems/LootSystem.js';
 import { CombatSystem } from './systems/CombatSystem.js';
 import { PhysicsSystem } from './systems/PhysicsSystem.js';
 import { StateSerializer } from '../networking/StateSerializer.js';
+import { BotController } from './entities/BotController.js';
 
 export const ROOM_STATES = {
   LOBBY: 'lobby',
@@ -51,6 +52,9 @@ export class Room {
 
     // Snapshot history for delta compression
     this.lastSnapshot = {};
+
+    // AI Bots
+    this.bots = [];
   }
 
   // ── Player management ─────────────────────────────────────
@@ -131,13 +135,40 @@ export class Room {
     this.emit(S2C.LOOT_SPAWN, { items: lootItems });
 
     // Set spawn positions
-    const spawns = this.world.getSafeSpawnPositions(this.players.size);
+    const spawns = this.world.getSafeSpawnPositions(this.players.size + 15); // spawn positions for players + 15 bots
     let si = 0;
     for (const player of this.players.values()) {
       const spawn = spawns[si++] || { x: 2048, y: 2048 };
       player.x = spawn.x;
       player.y = spawn.y;
       player.markDirty('x', 'y');
+    }
+
+    // Spawn 15 bots
+    const names = ['AlphaBot', 'BetaBot', 'OmegaBot', 'Rust', 'Clank', 'Pixel', 'Solder', 'Spark', 'Widget', 'Glitch', 'Binary', 'Hex', 'Logic', 'Giga', 'Vector'];
+    for (let i = 0; i < 15; i++) {
+      const botId = `bot-${uuidv4().slice(0, 8)}`;
+      const spawn = spawns[si++] || { x: 2048, y: 2048 };
+      const botPlayer = new Player({
+        socketId: `bot-socket-${botId}`,
+        playerId: botId,
+        name: names[i % names.length],
+        skin: Math.floor(Math.random() * 8),
+        elo: 800 + Math.floor(Math.random() * 400),
+      });
+      botPlayer.x = spawn.x;
+      botPlayer.y = spawn.y;
+      botPlayer.markDirty('x', 'y');
+
+      // Distribute armor & basic weapons
+      botPlayer.armor = { helmet: Math.floor(Math.random() * 3), vest: Math.floor(Math.random() * 3) };
+      const botWeapons = ['PISTOL', 'SMG', 'SHOTGUN', 'ASSAULT_RIFLE'];
+      const chosenWeapon = botWeapons[Math.floor(Math.random() * botWeapons.length)];
+      botPlayer.pickupWeapon(chosenWeapon, 10, 90);
+
+      this.players.set(botId, botPlayer);
+      const controller = new BotController(botPlayer, this);
+      this.bots.push(controller);
     }
 
     // Send match start
@@ -158,7 +189,12 @@ export class Room {
 
     this.tick++;
 
-    // 1. Process inputs + physics
+    // 1. Process Bot Logic
+    for (const bot of this.bots) {
+      bot.update(now, dt);
+    }
+
+    // 2. Process inputs + physics
     this.physics.update(this.players, dt);
 
     // 2. Process fire inputs
